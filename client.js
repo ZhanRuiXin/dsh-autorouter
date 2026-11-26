@@ -125,7 +125,6 @@ window.__ModuleLoader__.load({
       removeProfile: '删除档位',
       profileId: '标识',
       profileName: '显示名',
-      profileEnabled: '启用该档位',
       profileDisabled: '已停用',
       profileEmpty: '空链',
       chain: '回退顺序',
@@ -249,7 +248,6 @@ window.__ModuleLoader__.load({
       removeProfile: 'Delete profile',
       profileId: 'Id',
       profileName: 'Name',
-      profileEnabled: 'Enable profile',
       profileDisabled: 'disabled',
       profileEmpty: 'empty',
       chain: 'Fallback order',
@@ -886,7 +884,6 @@ window.__ModuleLoader__.load({
             { label: t('profileName') },
             h('input', { className: 'ar-input', value: profile.name ?? '', onChange: (event) => onEdit({ name: event.target.value }) }),
           ),
-          h(Toggle, { label: t('profileEnabled'), checked: profile.enabled !== false, onChange: (value) => onEdit({ enabled: value }) }),
         ),
         h(
           Section,

@@ -446,6 +446,14 @@ test('the routes tab renders one card per profile, without the status card', () 
   // the policy and the windows moved into the card itself.
   assert.equal(findAll(tree, (node) => node.props?.type === 'radio').length, 0, 'no unlabelled selector dot')
   assert.equal(findAll(tree, (node) => node.type === 'button' && text(node) === 'policy').length, 0, 'no policy tab')
+  // A profile is always routable: the enable switch said nothing a user needs.
+  assert.equal(findAll(tree, (node) => text(node) === 'profileEnabled').length, 0, 'a profile carries no enable switch')
+  const entryRowsAgain = findAll(tree, hasClassList(['ar-entry']))
+  assert.equal(
+    findAll(entryRowsAgain[0], (node) => node.props?.type === 'checkbox').length,
+    1,
+    'a route row still carries exactly its own checkbox',
+  )
 })
 
 test('the status tab owns the live route table', () => {
