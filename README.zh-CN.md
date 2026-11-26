@@ -38,7 +38,7 @@ DSH ──► autorouter/<profile> ──► 回退链
 
 ```jsonc
 // %USERPROFILE%\.dsh\profiles\desktop\package.json  (or $DSH_HOME/profiles/desktop/package.json)
-"dependencies": { "dsh-autorouter": "link:E:/Repositories/Deepseek Harness/auto-provider-router" },
+"dependencies": { "dsh-autorouter": "link:<本仓库的检出路径>" },
 "dsh": { "profile": { "bundles": [ /* … 其他 bundle … */, "dsh-autorouter" ] } }
 ```
 

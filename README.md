@@ -50,7 +50,7 @@ This repository is installed into a profile with `link:`:
 
 ```jsonc
 // %USERPROFILE%\.dsh\profiles\desktop\package.json  (or $DSH_HOME/profiles/desktop/package.json)
-"dependencies": { "dsh-autorouter": "link:E:/Repositories/Deepseek Harness/auto-provider-router" },
+"dependencies": { "dsh-autorouter": "link:<path to this checkout>" },
 "dsh": { "profile": { "bundles": [ /* … other bundles … */, "dsh-autorouter" ] } }
 ```
 

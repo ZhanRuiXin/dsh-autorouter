@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "AutoRouter",
-    "description": "把已登记的多个 provider/model 聚合成一个虚拟 provider：按回退链路由请求，失败时在首个输出块之前切换，并承接每路由的额度、冷却与思考强度。",
+    "description": "把已登记的多个 provider/model 聚合成一个虚拟 provider：按回退链路由请求，失败时在首个输出块之前切换，并承接每条路由的冷却与思考强度。",
     "detail": "README.md"
   }
 }
