@@ -7,6 +7,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { register } from 'node:module'
 import test from 'node:test'
@@ -16,6 +17,7 @@ const plugin = await import('../index.js')
 
 const ENTRY_ID = 'llm-autorouter'
 const PROVIDER_ID = 'autorouter'
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
 function makeHarness() {
   const provided = {}
@@ -151,7 +153,7 @@ test('apply registers one provider, one default virtual model and six routes', a
   assert.equal(harness.adapters.length, 1)
   assert.deepEqual(harness.adapters[0].providers, [PROVIDER_ID])
   assert.deepEqual(harness.provided.autorouter.name, PROVIDER_ID)
-  assert.equal(harness.provided.autorouter.version, '0.1.4')
+  assert.equal(harness.provided.autorouter.version, VERSION)
 
   const adapter = harness.adapters[0].adapter
   assert.deepEqual(adapter.providerInfo(PROVIDER_ID), { id: PROVIDER_ID, name: 'AutoRouter' })

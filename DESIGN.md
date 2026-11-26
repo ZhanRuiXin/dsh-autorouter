@@ -2,7 +2,7 @@
 
 > 目标：DSH 的模型选择器里只出现一个 provider `autorouter`（显示名 **AutoRouter**）。所有请求按一条可配置的回退链，在已登记的 provider/model 之间做**额度感知**的选择与轮换；思考强度（reasoning effort）随请求继承到实际执行的路由；全部设置通过 **设置 → AutoRouter** 页面完成，不要求用户编辑 YAML。
 
-状态：已实现（v0.1.4，2026-11-26）。
+状态：已实现（v0.1.5，2026-11-26）。
 
 **实现与初稿的差异以本节为准：**
 
@@ -15,8 +15,14 @@
   真正的配额信号是上游的 429，冷却与失败计数才是本插件该记的东西。
 - 实际 `Entry` 字段：`{ id, provider, model, enabled, cooldownMs, effortMap }`；
   `Profile` 字段：`{ id, name, enabled, description, chain, policy }`。
-- 设置页卡片可收起/展开，折叠状态存 `localStorage`（`dsh-autorouter:collapsed`）。
-- 新增 `test/client-render.test.js`：用 React double 在纯 Node 下渲染四个 tab，
+- 设置页卡片可收起/展开（点卡片头任意空白也算），折叠状态存 `localStorage`（`dsh-autorouter:collapsed`）。
+- 时间段与策略不再放在独立 tab：每个档位一张卡片，标识 / 链 / 时间段 / 策略都在卡片内，
+  随卡片收起，不再有"先选中某个档位"的概念（`selected` 状态已删除）。
+- 设置页只有三个 tab：路由链、实时状态、JSON。实时状态单独成 tab，避免编辑链时被
+  每 2 秒刷新的表打扰。
+- 保存按钮随时可点（不必先产生改动），写成功即刷新页面上的配置与 revision；
+  "重新载入"改为"撤销"，是保存的本地逆操作（不重新请求服务器）。
+- 新增 `test/client-render.test.js`：用 React double 在纯 Node 下渲染三个 tab，
   `useState` 顺序表一旦错位即失败。
 - 下文 §6/§7 的 `tier/weight/limits` 与 §5.5 保留为设计演进记录，不再代表实现。
 
@@ -423,33 +429,47 @@ apply(ctx) {
 
 ### 7.2 页面结构
 
+页面只有三个 tab，默认进入"路由链"：
+
 ```
-┌ AutoRouter ─────────────────────────────────────────────── [启用 ●] ┐
-│ 状态   auto · 3 条路由 · 2 正常 / 1 冷却                            │
-│ 当前   opendesign/deepseek-v4.1-flash-eco  （本会话，12:31 起）      │
-├─────────────────────────────────────────────────────────────────────┤
-│ 链                                          [从 fallbacks 导入] [+]  │
-│ ≡ 1  opendesign / deepseek-v4.1-flash-eco  tier 0  ● 正常           │
-│      今日 40 请求 / 1.2M tokens           [测试] [⋯]                │
-│ ≡ 2  commandcode / deepseek/…-flash        tier 0  ● 正常           │
-│      今日 12 请求 / 300K tokens           [测试] [⋯]                │
-│ ≡ 3  deepseek-account / deepseek-flash     tier 1  ◐ 冷却 4:12      │
-│      今日 0 请求                          [测试] [⋯]                │
-├─────────────────────────────────────────────────────────────────────┤
-│ 策略   粘性[会话▾] 冷却[5m] 最大切换[3] 耗尽[最早恢复▾]             │
-│ 触发   [AUTH] [QUOTA] [RATE_LIMIT] [+]                              │
-│ 高级   effort 顺序 · 上下文窗口 · HTTP facade（外部客户端）          │
+AutoRouter                                   [撤销] [保存]
+一个 provider、一条回退链：严格按顺序在已登记的 provider / model 之间尝试…
+
+[ 路由链 ] [ 实时状态 ] [ JSON ]
+每个档位一张卡片：标识、路由链、时间段与策略都在里面。
+
+┌ ▾  auto   Auto   [已启用]                                  [删除] ┐   ← 点卡片头收起
+│  标识 [auto]   显示名 [Auto]                                       │
+│  启用档位 [●]                                                    │
+│  ┌ od  OpenDesign · Flash Eco ─ 5 分钟 ──────────────── [删除] ┐   │
+│  │  provider [opendesign ▾]   model [deepseek-v4.1-flash-eco ▾] │   │
+│  │  冷却（分钟）[5]                                             │   │
+│  │  ▶ 思考强度映射                                              │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌ cc  CommandCode … ┐  ┌ ds  DeepSeek Account · Flash ┐           │
+│  [+ 增加路由]                                                       │
+│  ▸ 时间段 · 1        （详情：每条窗口的标签、起止、order、删除）     │
+│  ▸ 策略              （详情：maxSwitches / 冷却 / 退避 / 粘性 /     │
+│                         失败窗口 / effort / context / 时区 / 触发码） │
 └─────────────────────────────────────────────────────────────────────┘
+
+[ 实时状态 ]   ┌ ▾ 实时状态  3 条路由              [刷新] [清空冷却] ┐
+               │ profile | provider | model | health |               │
+               │ 统计 / 粘性会话                                     │
+
+[ JSON ]       直接编辑完整配置，[应用] / [撤销]
 ```
 
-交互细节：
+交互细节（与实现一致）：
 
-- 每行展开：`tier`、`weight`、`limits`、`effortMap`、单条 `cooldownMs`、启用开关、删除。排序用拖拽，同时提供上/下移按钮（键盘可达）。
-- “测试”按钮发一条 1-token 的探测请求，显示首 token 延迟与错误码；**明确提示会消耗额度**，需二次确认。
-- “从 fallbacks 导入”：读取 `dsh-llm-fallbacks` 的配置（若存在），把 `chain-1` 的 entries 转成链目；只做一次，导入前展示 diff。
-- 配置变更即时写回：文本输入 400ms 防抖，开关/排序立即写；每次写带 `expectedRevision`，冲突时提示“设置已在别处修改”，重新载入后让用户重做。
-- 空态：没有可用路由时显示“先在 设置 → 模型 配置至少一个 provider”，而不是一个空链。
-- 只读态：插件被禁用或 `llm` 服务不可用时，页面显示原因，不隐藏入口。
+- 卡片头即展开/收起开关（`cursor:pointer`，点空白切换；点内部按钮/输入框不切换），
+  右侧 chevron 单独可点且带 `aria-expanded`；折叠状态按卡片 id 记在 `localStorage`。
+- 时间段与策略是 `<details>`，默认收起；它们属于本档位，随卡片一起收起，不必先选中档位。
+- 路由可从已登记 provider / model 里选；`Probe` 只做元数据可达性检查，不发真实请求。
+- 保存随时可点（`disabled: busy`），成功后用返回的配置与 revision 刷新页面。
+- 撤销丢弃未保存的改动、回到上次保存的配置，不重新请求服务器。
+- 空态：没有可用路由时提示先到 设置 → 模型 配置 provider，而不是给一个空链。
+- 只读态：插件被禁用或 `llm` 服务不可用时显示原因，入口不隐藏。
 
 ### 7.3 数据面
 

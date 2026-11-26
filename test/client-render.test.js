@@ -125,7 +125,6 @@ const SETTINGS_STATE = [
   { kind: 'value', initial: null, value: STATUS }, // status
   { kind: 'value', initial: { providers: [] }, value: CATALOG }, // catalog
   { kind: 'value', initial: 'routes', value: 'routes' }, // tab  (overridden per render)
-  { kind: 'value', initial: '', value: 'auto' }, // selected
   { kind: 'value', initial: false, value: false }, // busy
   { kind: 'value', initial: false, value: false }, // dirty
   { kind: 'value', initial: {}, value: {} }, // probes
@@ -372,28 +371,45 @@ function setup() {
   return { react, slots, styles, document, section, icon, dict }
 }
 
-function renderPage(setupResult, { tab = 'routes', collapsed = [], scheme = 'light' } = {}) {
+function renderPage(setupResult, { tab = 'routes', collapsed = [], scheme = 'light', dirty = false } = {}) {
   const scenario = SETTINGS_STATE.map((spec) => ({ ...spec }))
   scenario[8].value = tab
-  scenario[15].value = scheme
-  scenario[16].value = new Set(collapsed)
+  scenario[10].value = dirty
+  scenario[14].value = scheme
+  scenario[15].value = new Set(collapsed)
   const page = setupResult.section.component
   const t = (key) => key
   const tree = render(createElement(page, { t, close: () => {} }), setupResult.react, scenario)
   return { tree, t }
 }
 
-test('the routes tab renders one card per profile plus the status card', () => {
+test('the routes tab renders one card per profile, without the status card', () => {
   const setupResult = setup()
   const { tree } = renderPage(setupResult)
 
   const cards = findAll(tree, hasClass('ar-card'))
-  assert.equal(cards.length, 2, 'one profile card and one status card')
-  assert.equal(findAll(tree, hasClass('ar-chevron')).length, 2, 'every card carries a disclosure button')
+  assert.equal(cards.length, 1, 'the live status moved off this tab, so one profile means one card')
+  assert.equal(findAll(tree, hasClass('ar-chevron')).length, 1, 'every card carries a disclosure button')
+  assert.equal(findAll(tree, hasClass('ar-card-body')).length, 1, 'an open card exposes its body')
 
-  const expanded = findAll(tree, (node) => node.props?.['aria-expanded'] === true)
-  assert.equal(expanded.length, 2)
-  assert.equal(findAll(tree, hasClass('ar-card-body')).length, 2, 'open cards expose their body')
+  assert.equal(findAll(tree, (node) => node.type === 'table').length, 0, 'no live route table on the chain tab')
+  assert.equal(findAll(tree, (node) => node.type === 'th').length, 0)
+
+  const entryRows = findAll(tree, hasClassList(['ar-entry']))
+  assert.equal(entryRows.length, 2)
+  assert.ok(text(tree).includes('OpenDesign'), 'the chain renders its routes')
+
+  // The head is text only: nothing in it selects a profile any more, because
+  // the policy and the windows moved into the card itself.
+  assert.equal(findAll(tree, (node) => node.props?.type === 'radio').length, 0, 'no unlabelled selector dot')
+  assert.equal(findAll(tree, (node) => node.type === 'button' && text(node) === 'policy').length, 0, 'no policy tab')
+})
+
+test('the status tab owns the live route table', () => {
+  const setupResult = setup()
+  const { tree } = renderPage(setupResult, { tab: 'status' })
+
+  assert.equal(findAll(tree, hasClass('ar-card')).length, 1, 'the status card lives alone on its tab')
 
   const headers = findAll(tree, (node) => node.type === 'th').map(text)
   assert.deepEqual(headers, ['profile', 'provider', 'model', 'health', ''], 'no request-budget column')
@@ -401,42 +417,34 @@ test('the routes tab renders one card per profile plus the status card', () => {
   const rows = findAll(tree, (node) => node.type === 'tr')
   assert.equal(rows.length, 3, 'a header row and one row per route')
 
-  const entryRows = findAll(tree, hasClassList(['ar-entry']))
-  assert.equal(entryRows.length, 2)
-  assert.ok(text(tree).includes('opendesign'), 'the chain renders its providers')
-
-  // The profile card head is text only: selection lives in the policy and
-  // time-window pills, so a bare radio here would be a control with no label.
-  assert.equal(findAll(tree, (node) => node.props?.type === 'radio').length, 0, 'no unlabelled selector dot')
-  const profileCard = findAll(tree, hasClassList(['ar-card']))[0]
-  assert.ok(profileCard.props.style?.borderColor, 'the selected profile is marked by its border')
+  assert.ok(text(tree).includes('cooling'), 'a cooling route shows its badge')
+  assert.ok(text(tree).includes('abcdef12'), 'the sticky session is listed')
 })
 
 test('collapsed cards keep their head and drop the body', () => {
   const setupResult = setup()
-  const { tree } = renderPage(setupResult, { collapsed: ['status'] })
+  const { tree } = renderPage(setupResult, { tab: 'status', collapsed: ['status'] })
 
   const cards = findAll(tree, hasClass('ar-card'))
-  const status = cards.find((card) => text(card).includes('status'))
-  assert.ok(status, 'the status card is still rendered')
+  assert.equal(cards.length, 1)
+  const status = cards[0]
   assert.ok(hasClass('collapsed')(status), 'a collapsed card is marked')
   assert.equal(findAll(status, hasClass('ar-card-body')).length, 0)
 
   const chevrons = findAll(tree, hasClass('ar-chevron'))
-  assert.equal(chevrons.length, 2)
+  assert.equal(chevrons.length, 1)
   assert.equal(chevrons.filter((node) => node.props['aria-expanded'] === false).length, 1)
   assert.ok(chevrons.some((node) => text(node) === '▸'))
 })
 
-test('the policy tab renders the policy card and the time windows', () => {
+test('the time windows and the policy live inside the profile card', () => {
   const setupResult = setup()
-  const { tree } = renderPage(setupResult, { tab: 'policy' })
+  const { tree } = renderPage(setupResult)
 
-  const cards = findAll(tree, hasClass('ar-card'))
-  assert.equal(cards.length, 2, 'the policy card and the time-window card')
-  const inputs = findAll(tree, (node) => node.type === 'input')
-  assert.ok(inputs.length >= 14, `every policy field renders (got ${inputs.length})`)
+  const card = findAll(tree, hasClassList(['ar-card']))[0]
+  assert.ok(card, 'the profile card renders')
 
+  const inputs = findAll(card, (node) => node.type === 'input')
   const timeInputs = inputs.filter((node) => node.props.type === 'time')
   assert.equal(timeInputs.length, 2, 'from/to clock fields for the one window')
   assert.equal(timeInputs[0].props.value, '00:30')
@@ -445,6 +453,32 @@ test('the policy tab renders the policy card and the time windows', () => {
     inputs.some((node) => node.props.value === '谷时'),
     'the window label is editable',
   )
+
+  const numbers = inputs.filter((node) => node.props.type === 'number')
+  assert.ok(numbers.length >= 8, `every policy field renders inside the card (got ${numbers.length})`)
+
+  // Two route rows carry their own effort-map disclosure, then the windows
+  // and the policy of the profile itself.
+  const details = findAll(card, hasClass('ar-details'))
+  assert.equal(details.length, 4, 'two effort disclosures plus windows and policy')
+  const summaries = details.map((node) => findAll(node, (child) => child.type === 'summary').map(text))
+  assert.deepEqual(summaries.slice(-2), [['timeWindows · 1'], ['policy']])
+})
+
+test('save is always available and undo is its local inverse', () => {
+  const clean = renderPage(setup())
+  const cleanButtons = findAll(clean.tree, (node) => node.type === 'button' && hasClass('ar-btn')(node))
+  const cleanSave = cleanButtons.find((node) => text(node) === 'save')
+  const cleanUndo = cleanButtons.find((node) => text(node) === 'undo')
+  assert.ok(cleanSave, 'the header keeps a save button')
+  assert.equal(cleanSave.props.disabled, false, 'saving must not depend on a dirty flag')
+  assert.ok(cleanUndo, 'the reload button became undo')
+  assert.equal(cleanUndo.props.disabled, true, 'nothing to undo while the draft is clean')
+
+  const dirty = renderPage(setup(), { dirty: true })
+  const dirtyButtons = findAll(dirty.tree, (node) => node.type === 'button' && hasClass('ar-btn')(node))
+  assert.equal(dirtyButtons.find((node) => text(node) === 'undo').props.disabled, false, 'dirty edits can be undone')
+  assert.ok(text(dirty.tree).includes('dirty'), 'the dirty badge is shown')
 })
 
 test('the json tab renders the draft and its actions', () => {
@@ -454,8 +488,8 @@ test('the json tab renders the draft and its actions', () => {
   const textarea = findAll(tree, (node) => node.type === 'textarea')[0]
   assert.ok(textarea)
   assert.ok(textarea.props.value.includes('"profiles"'))
-  // the header keeps its own save/reload pair above the tab body
-  assert.equal(findAll(tree, hasClass('ar-btn')).length, 4, 'header actions plus apply and reload')
+  // header save/undo plus apply/undo under the textarea
+  assert.equal(findAll(tree, hasClass('ar-btn')).length, 4, 'header actions plus apply and undo')
   assert.ok(text(tree).includes('applyJson'), 'the draft can be applied')
 })
 

@@ -33,9 +33,10 @@ window.__ModuleLoader__.load({
 .ar-btn.danger{color:#e5484d;border-color:rgba(229,72,77,.40)}
 .ar-btn.tiny{padding:1px 7px;font-size:11px;border-radius:5px}
 .ar-card{border:1px solid rgba(128,128,128,.22);border-radius:10px;padding:11px 12px;background:rgba(128,128,128,.035);display:flex;flex-direction:column;gap:9px}
-.ar-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ar-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer;min-height:24px;padding:2px 0;margin:-2px 0}
+.ar-card-head:hover .ar-chevron{opacity:1}
 .ar-card-body{display:flex;flex-direction:column;gap:9px}
-.ar-chevron{all:unset;cursor:pointer;width:13px;flex:0 0 auto;text-align:center;font-size:11px;line-height:1;opacity:.70}
+.ar-chevron{all:unset;cursor:pointer;width:15px;flex:0 0 auto;padding:5px 0;text-align:center;font-size:12px;line-height:1;opacity:.62}
 .ar-chevron:hover{opacity:1}
 .ar-chevron:focus-visible{outline:2px solid rgba(59,130,246,.60);border-radius:4px}
 .ar-card-title{font-weight:600;font-size:13px}
@@ -80,23 +81,28 @@ window.__ModuleLoader__.load({
 .ar-json{width:100%;min-height:420px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5;background:rgba(128,128,128,.07);border:1px solid rgba(128,128,128,.28);color:inherit;border-radius:8px;padding:9px;resize:vertical}
 .ar-details summary{cursor:pointer;font-size:11.5px;opacity:.62;user-select:none}
 .ar-details[open] summary{opacity:.85}
+.ar-details[open]>.ar-stack,.ar-details[open]>.ar-window,.ar-details[open]>.ar-hint,.ar-details[open]>.ar-muted,.ar-details[open]>.ar-row{margin-top:7px}
+.ar-stack{display:flex;flex-direction:column;gap:8px}
+.ar-window{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(128,128,128,.16);border-radius:8px}
 `
 
     const ZH = {
       nav: 'AutoRouter',
       title: 'AutoRouter 聚合路由',
-      subtitle: '一个 provider、一条回退链：按额度、冷却与健康度在已登记的 provider / model 之间切换，思考强度按目标映射。',
+      subtitle: '一个 provider、一条回退链：严格按顺序在已登记的 provider / model 之间尝试，失败才往后走，思考强度按目标映射。',
       enabled: '启用 AutoRouter',
       save: '保存',
       saving: '保存中…',
-      reload: '重新载入',
+      saveHint: '立即写入配置；已生效的档位会被新配置替换',
+      undo: '撤销',
+      undoHint: '放弃未保存的改动，回到上次保存的配置',
+      reverted: '已撤销未保存的改动',
       dirty: '有未保存的改动',
       saved: '已保存，新配置已生效',
       duplicateProfile: '档位 id 不能重复，否则保存时会丢掉其中一个档位',
       profileIdRequired: '档位 id 不能为空',
       failed: '保存失败',
       conflict: '配置已被其他窗口修改。载入服务器版本后重试。',
-      loadServer: '载入服务器版本',
       retry: '重试',
       loading: '载入中…',
       unavailable: '无法读取 AutoRouter 状态',
@@ -104,6 +110,7 @@ window.__ModuleLoader__.load({
       policy: '策略',
       json: 'JSON',
       profile: '档位',
+      routesHint: '每个档位一张卡片：标识、路由链、时间段与策略都在里面。',
       addProfile: '新建档位',
       removeProfile: '删除档位',
       profileId: '标识',
@@ -128,7 +135,7 @@ window.__ModuleLoader__.load({
       up: '上移',
       down: '下移',
       remove: '删除',
-      policyHint: '这些策略作用于当前档位。',
+      policyHint: '这些策略只作用于本档位。',
       timeWindows: '时间段',
       addWindow: '添加时段',
       presetDeepSeek: 'DeepSeek 峰谷',
@@ -188,24 +195,25 @@ window.__ModuleLoader__.load({
       refresh: '刷新',
       emptyChain: '链路为空。至少添加一条路由后才能接管调用。',
       entryInvalid: 'provider / model 不能为空',
-      unsavedLeave: '有未保存的改动，确定离开？',
     }
 
     const EN = {
       nav: 'AutoRouter',
       title: 'AutoRouter gateway',
-      subtitle: 'One provider, one fallback chain: route across registered providers and models by quota, cooldown and health, with reasoning effort mapped per target.',
+      subtitle: 'One provider, one fallback chain: try registered providers and models strictly in order, move on only after a failure, and map reasoning effort per target.',
       enabled: 'Enable AutoRouter',
       save: 'Save',
       saving: 'Saving…',
-      reload: 'Reload',
+      saveHint: 'Write the config now; the running profiles pick it up immediately',
+      undo: 'Undo',
+      undoHint: 'Drop unsaved edits and go back to the last saved config',
+      reverted: 'Unsaved edits dropped',
       dirty: 'Unsaved changes',
       saved: 'Saved. The new config is live.',
       duplicateProfile: 'Profile ids must be unique, or saving drops one of them.',
       profileIdRequired: 'A profile id cannot be empty.',
       failed: 'Save failed',
       conflict: 'This config was changed in another window. Load the server version first.',
-      loadServer: 'Load server version',
       retry: 'Retry',
       loading: 'Loading…',
       unavailable: 'Cannot read AutoRouter state',
@@ -213,6 +221,7 @@ window.__ModuleLoader__.load({
       policy: 'Policy',
       json: 'JSON',
       profile: 'Profile',
+      routesHint: 'One card per profile: identity, chain, time windows and policy all live inside it.',
       addProfile: 'New profile',
       removeProfile: 'Delete profile',
       profileId: 'Id',
@@ -237,7 +246,7 @@ window.__ModuleLoader__.load({
       up: 'Up',
       down: 'Down',
       remove: 'Remove',
-      policyHint: 'Applies to the selected profile.',
+      policyHint: 'Applies to this profile only.',
       timeWindows: 'Time windows',
       addWindow: 'Add window',
       presetDeepSeek: 'DeepSeek peak / off-peak',
@@ -297,7 +306,6 @@ window.__ModuleLoader__.load({
       refresh: 'Refresh',
       emptyChain: 'The chain is empty. Add at least one route before it can take over.',
       entryInvalid: 'provider / model must not be empty',
-      unsavedLeave: 'Unsaved changes. Leave anyway?',
     }
 
     function minutesToClock(value) {
@@ -436,12 +444,24 @@ window.__ModuleLoader__.load({
      * profile card keeps its identity by position rather than by its editable id.
      */
     function Card({ t, open, onToggle, style, head, actions, children }) {
+      // The whole head row is the target, not just the chevron: a 15px glyph is
+      // a miss-prone click. Controls inside the head keep their own behaviour,
+      // which also stops the chevron from toggling twice through bubbling.
+      const toggleFromHead = (event) => {
+        const target = event?.target
+        if (target !== null && typeof target?.closest === 'function' && target.closest('button, input, select, textarea, a, label')) return
+        onToggle?.()
+      }
       return h(
         'div',
         { className: `ar-card${open ? '' : ' collapsed'}`, style },
         h(
           'div',
-          { className: 'ar-card-head' },
+          {
+            className: 'ar-card-head',
+            onClick: toggleFromHead,
+            title: open ? t('collapseCard') : t('expandCard'),
+          },
           h(
             'button',
             {
@@ -449,13 +469,14 @@ window.__ModuleLoader__.load({
               type: 'button',
               'aria-expanded': open,
               'aria-label': open ? t('collapseCard') : t('expandCard'),
-              title: open ? t('collapseCard') : t('expandCard'),
               onClick: onToggle,
             },
             open ? '▾' : '▸',
           ),
           head,
-          actions === undefined || actions === null ? null : h('span', { style: S.right }, actions),
+          actions === undefined || actions === null
+            ? null
+            : h('span', { style: S.right, onClick: (event) => event.stopPropagation() }, actions),
         ),
         open ? h('div', { className: 'ar-card-body' }, children) : null,
       )
@@ -473,7 +494,7 @@ window.__ModuleLoader__.load({
     function Tabs(props) {
       const items = [
         ['routes', props.t('routes')],
-        ['policy', props.t('policy')],
+        ['status', props.t('status')],
         ['json', props.t('json')],
       ]
       return h(
@@ -617,7 +638,9 @@ window.__ModuleLoader__.load({
     }
 
     function ProfileCard(props) {
-      const { profile, index, selected, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
+      const { profile, index, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
+      const policy = profile.policy ?? {}
+      const setPolicy = (patch) => onEdit({ policy: { ...policy, ...patch } })
       const [provider, setProvider] = useState(catalog.providers[0]?.id ?? '')
       const [model, setModel] = useState(catalog.providers[0]?.models[0]?.id ?? '')
       const models = catalog.providers.find((item) => item.id === provider)?.models ?? []
@@ -634,7 +657,6 @@ window.__ModuleLoader__.load({
           t,
           open: props.open !== false,
           onToggle: props.onToggle,
-          style: selected ? { borderColor: 'rgba(59,130,246,.55)' } : undefined,
           head: [
             h('span', { key: 'title', className: 'ar-card-title' }, profile.name || profile.id),
             h('span', { key: 'id', className: 'ar-badge' }, profile.id),
@@ -715,6 +737,292 @@ window.__ModuleLoader__.load({
             `+ ${t('addRoute')}`,
           ),
         ),
+        h(TimeWindows, {
+          t,
+          windows: policy.timeWindows ?? [],
+          chain: profile.chain ?? [],
+          onChange: (list) => setPolicy({ timeWindows: list }),
+        }),
+        h(
+          'details',
+          { className: 'ar-details ar-policy' },
+          h('summary', null, t('policy')),
+          h(PolicyFields, { t, policy, onChange: setPolicy }),
+        ),
+      )
+    }
+
+    /**
+     * Policy belongs to the profile that owns the chain, so it renders inside
+     * that profile's card. A page-level policy card had to carry its own
+     * profile picker and could silently edit a profile the user was not
+     * looking at.
+     */
+    function PolicyFields({ t, policy, onChange }) {
+      const value = policy ?? {}
+      const set = (patch) => onChange(patch)
+      return h(
+        'div',
+        { className: 'ar-stack' },
+        h('div', { className: 'ar-hint' }, t('policyHint')),
+        h(
+          'div',
+          { className: 'ar-grid' },
+          h(
+            Field,
+            { label: t('maxSwitches') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              max: 50,
+              value: value.maxSwitches ?? 8,
+              onChange: (event) => set({ maxSwitches: Math.max(0, Math.round(num(event.target.value, 8))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('cooldown') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              step: 0.5,
+              value: Math.round((value.cooldownMs ?? 300000) / 6000) / 10,
+              onChange: (event) => set({ cooldownMs: Math.round(num(event.target.value, 5) * 60000) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('jitter') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              max: 1,
+              step: 0.05,
+              value: value.cooldownJitterRatio ?? 0.2,
+              onChange: (event) => set({ cooldownJitterRatio: Math.min(1, Math.max(0, num(event.target.value, 0.2))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('stickinessTtl') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              value: Math.round((value.stickinessTtlMs ?? 1800000) / 60000),
+              onChange: (event) => set({ stickinessTtlMs: Math.max(0, Math.round(num(event.target.value, 30) * 60000)) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('failureWindow') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              value: Math.round((value.failureWindowMs ?? 120000) / 60000),
+              onChange: (event) => set({ failureWindowMs: Math.max(0, Math.round(num(event.target.value, 2) * 60000)) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('failureThreshold') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 1,
+              value: value.failureThreshold ?? 3,
+              onChange: (event) => set({ failureThreshold: Math.max(1, Math.round(num(event.target.value, 3))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('backoff') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              value: value.backoffBaseMs ?? 1000,
+              onChange: (event) => set({ backoffBaseMs: Math.max(0, Math.round(num(event.target.value, 1000))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('backoffMax') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              value: value.backoffMaxMs ?? 15000,
+              onChange: (event) => set({ backoffMaxMs: Math.max(0, Math.round(num(event.target.value, 15000))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('recovery') },
+            h(
+              'select',
+              { className: 'ar-select', value: value.recovery ?? 'timer', onChange: (event) => set({ recovery: event.target.value }) },
+              h('option', { value: 'timer' }, t('recoveryTimer')),
+              h('option', { value: 'never' }, t('recoveryNever')),
+            ),
+          ),
+          h(
+            Field,
+            { label: t('effortPolicy') },
+            h(
+              'select',
+              { className: 'ar-select', value: value.effortPolicy ?? 'clamp', onChange: (event) => set({ effortPolicy: event.target.value }) },
+              h('option', { value: 'clamp' }, t('effortPolicyClamp')),
+              h('option', { value: 'drop' }, t('effortPolicyDrop')),
+              h('option', { value: 'fail' }, t('effortPolicyFail')),
+            ),
+          ),
+          h(
+            Field,
+            { label: t('contextPolicy') },
+            h(
+              'select',
+              { className: 'ar-select', value: value.contextPolicy ?? 'min', onChange: (event) => set({ contextPolicy: event.target.value }) },
+              h('option', { value: 'min' }, t('contextMin')),
+              h('option', { value: 'max' }, t('contextMax')),
+            ),
+          ),
+          h(
+            Field,
+            { label: t('defaultContext') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 1000,
+              step: 1000,
+              value: value.defaultContextWindow ?? 128000,
+              onChange: (event) => set({ defaultContextWindow: Math.max(1000, Math.round(num(event.target.value, 128000))) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('utcOffset'), hint: t('timezone') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: -720,
+              max: 840,
+              value: value.utcOffsetMinutes ?? 480,
+              onChange: (event) => set({ utcOffsetMinutes: Math.round(num(event.target.value, 480)) }),
+            }),
+          ),
+        ),
+        h(Toggle, { label: t('sticky'), title: t('stickyHint'), checked: value.sticky !== false, onChange: (next) => set({ sticky: next }) }),
+        h(Toggle, { label: t('honorRetryAfter'), checked: value.honorRetryAfter !== false, onChange: (next) => set({ honorRetryAfter: next }) }),
+        h(Toggle, { label: t('retryNetwork'), checked: value.retryOnNetwork !== false, onChange: (next) => set({ retryOnNetwork: next }) }),
+        h(
+          Field,
+          { label: t('triggerCodes'), hint: t('triggerCodesHint') },
+          h('input', {
+            className: 'ar-input wide',
+            value: (value.triggerCodes ?? []).join(','),
+            onChange: (event) => set({ triggerCodes: splitList(event.target.value) }),
+          }),
+        ),
+        h(
+          Field,
+          { label: t('triggerStatuses'), hint: t('triggerStatusesHint') },
+          h('input', {
+            className: 'ar-input wide',
+            value: (value.triggerStatuses ?? []).join(','),
+            onChange: (event) =>
+              set({
+                triggerStatuses: splitList(event.target.value)
+                  .map((item) => Math.round(num(item, 0)))
+                  .filter((item) => item > 0),
+              }),
+          }),
+        ),
+      )
+    }
+
+    /**
+     * Time windows reorder one profile's own chain, so they live inside that
+     * profile's card instead of a card of their own: a window is meaningless
+     * without the routes it reorders, and a page-level card forced the user to
+     * pick a profile twice.
+     */
+    function TimeWindows({ t, windows, chain, onChange }) {
+      const edit = (index, patch) => onChange(windows.map((item, at) => (at === index ? { ...item, ...patch } : item)))
+      const add = () =>
+        onChange([...windows, { id: `window-${windows.length + 1}`, label: '', from: '00:00', to: '08:30', order: [] }])
+      const remove = (index) => onChange(windows.filter((_, at) => at !== index))
+      const preset = () => {
+        const keys = (chain ?? [])
+          .filter((entry) => entry.enabled !== false)
+          .map((entry) => `${entry.provider}/${entry.model}`)
+        const official = keys.filter((key) => key.startsWith('deepseek-account/'))
+        const others = keys.filter((key) => !official.includes(key))
+        onChange([
+          { id: 'deepseek-offpeak', label: 'DeepSeek 低谷', from: '00:30', to: '08:30', order: [...official, ...others] },
+          { id: 'deepseek-peak', label: 'DeepSeek 标准', from: '08:30', to: '00:30', order: [...others, ...official] },
+        ])
+      }
+
+      return h(
+        'details',
+        { className: 'ar-details ar-windows' },
+        h('summary', null, windows.length === 0 ? t('timeWindows') : `${t('timeWindows')} · ${windows.length}`),
+        h(
+          'div',
+          { className: 'ar-row', style: { marginTop: 6 } },
+          h('button', { className: 'ar-btn tiny', type: 'button', onClick: add }, t('addWindow')),
+          h('button', { className: 'ar-btn tiny', type: 'button', onClick: preset }, t('presetDeepSeek')),
+        ),
+        h('div', { className: 'ar-hint' }, t('timeWindowHint')),
+        windows.length === 0
+          ? h('div', { className: 'ar-muted' }, t('noWindows'))
+          : windows.map((window, index) =>
+              h(
+                'div',
+                { key: index, className: 'ar-window' },
+                h(
+                  'div',
+                  { className: 'ar-row' },
+                  h('input', {
+                    className: 'ar-input grow',
+                    value: window.label ?? '',
+                    placeholder: t('windowLabel'),
+                    onChange: (event) => edit(index, { label: event.target.value }),
+                  }),
+                  h('input', {
+                    className: 'ar-input num',
+                    type: 'time',
+                    value: minutesToClock(window.from),
+                    onChange: (event) => edit(index, { from: event.target.value }),
+                  }),
+                  h('span', { className: 'ar-muted' }, '→'),
+                  h('input', {
+                    className: 'ar-input num',
+                    type: 'time',
+                    value: minutesToClock(window.to),
+                    onChange: (event) => edit(index, { to: event.target.value }),
+                  }),
+                  h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => remove(index) }, '✕'),
+                ),
+                h('input', {
+                  className: 'ar-input wide',
+                  value: (window.order ?? []).join(', '),
+                  placeholder: t('windowOrderHint'),
+                  onChange: (event) =>
+                    edit(index, {
+                      order: event.target.value
+                        .split(',')
+                        .map((item) => item.trim())
+                        .filter((item) => item !== ''),
+                    }),
+                }),
+              ),
+            ),
       )
     }
 
@@ -729,7 +1037,6 @@ window.__ModuleLoader__.load({
       const [status, setStatus] = useState(null)
       const [catalog, setCatalog] = useState({ providers: [] })
       const [tab, setTab] = useState('routes')
-      const [selected, setSelected] = useState('')
       const [busy, setBusy] = useState(false)
       const [dirty, setDirty] = useState(false)
       const [probes, setProbes] = useState({})
@@ -790,8 +1097,6 @@ window.__ModuleLoader__.load({
             setDraft(state.config)
             setDirty(false)
             setJsonText(JSON.stringify(state.config, null, 2))
-            const ids = new Set((state.config?.profiles ?? []).map((item) => item.id))
-            setSelected((previous) => (ids.has(previous) ? previous : (state.config?.profiles?.[0]?.id ?? '')))
           }
           setCatalog(cat)
         } catch (failure) {
@@ -827,8 +1132,6 @@ window.__ModuleLoader__.load({
       }, [])
 
       const profiles = draft?.profiles ?? []
-      const selectedIndex = Math.max(0, profiles.findIndex((profile) => profile.id === selected))
-      const profile = profiles[selectedIndex]
 
       const switchTab = (next) => {
         if (next === 'json') setJsonText(JSON.stringify(draft, null, 2))
@@ -845,54 +1148,23 @@ window.__ModuleLoader__.load({
       }
 
       const editProfile = (index, patch) => {
-        const target = profiles[index]
-        if (patch.id !== undefined && target !== undefined && selected === target.id) setSelected(patch.id)
         editDraft((next) => {
           next.profiles[index] = { ...next.profiles[index], ...patch }
         })
       }
 
-      const editPolicy = (patch) =>
-        editDraft((next) => {
-          const target = next.profiles[selectedIndex]
-          target.policy = { ...target.policy, ...patch }
-        })
-
-      const windows = profile?.policy?.timeWindows ?? []
-
-      const editWindow = (index, patch) =>
-        editDraft((next) => {
-          const target = next.profiles[selectedIndex]
-          const list = (target.policy.timeWindows ??= [])
-          list[index] = { ...list[index], ...patch }
-        })
-
-      const addWindow = () =>
-        editDraft((next) => {
-          const target = next.profiles[selectedIndex]
-          const list = (target.policy.timeWindows ??= [])
-          list.push({ id: `window-${list.length + 1}`, label: '', from: '00:00', to: '08:30', order: [] })
-        })
-
-      const removeWindow = (index) =>
-        editDraft((next) => {
-          const target = next.profiles[selectedIndex]
-          target.policy.timeWindows = (target.policy.timeWindows ?? []).filter((_, at) => at !== index)
-        })
-
-      const presetDeepSeek = () =>
-        editDraft((next) => {
-          const target = next.profiles[selectedIndex]
-          const keys = (target.chain ?? [])
-            .filter((entry) => entry.enabled !== false)
-            .map((entry) => `${entry.provider}/${entry.model}`)
-          const official = keys.filter((key) => key.startsWith('deepseek-account/'))
-          const others = keys.filter((key) => !official.includes(key))
-          target.policy.timeWindows = [
-            { id: 'deepseek-offpeak', label: 'DeepSeek 低谷', from: '00:30', to: '08:30', order: [...official, ...others] },
-            { id: 'deepseek-peak', label: 'DeepSeek 标准', from: '08:30', to: '00:30', order: [...others, ...official] },
-          ]
-        })
+      /**
+       * Discard the draft instead of refetching: the button sits next to Save,
+       * so it has to be the inverse of Save (local, instant, no network) and
+       * never silently throw away edits the user did not ask to drop.
+       */
+      const undo = () => {
+        if (serverConfig === null) return
+        setDraft(structuredClone(serverConfig))
+        setDirty(false)
+        setJsonError('')
+        flash(t('reverted'))
+      }
 
       async function save() {
         if (draft === null || busy) return
@@ -946,19 +1218,16 @@ window.__ModuleLoader__.load({
             name: id,
             enabled: true,
             chain: [],
-            policy: structuredClone(next.profiles[selectedIndex]?.policy ?? {}),
+            policy: structuredClone(next.profiles[next.profiles.length - 1]?.policy ?? {}),
           })
         })
-        setSelected(id)
       }
 
       function removeProfile(index) {
         if (profiles.length <= 1) return
-        const removed = profiles[index]
         editDraft((next) => {
           next.profiles.splice(index, 1)
         })
-        if (selected === removed.id) setSelected(profiles[index === 0 ? 1 : 0]?.id ?? '')
       }
 
       function addRoute(profileId, { provider, model }) {
@@ -1044,19 +1313,15 @@ window.__ModuleLoader__.load({
               },
             }),
             dirty ? h('span', { className: 'ar-badge warn' }, t('dirty')) : null,
-            h('button', { className: 'ar-btn primary', type: 'button', disabled: !dirty || busy, onClick: save }, busy ? t('saving') : t('save')),
             h(
               'button',
-              {
-                className: 'ar-btn',
-                type: 'button',
-                disabled: busy,
-                onClick: () => {
-                  if (dirty && !window.confirm(t('unsavedLeave'))) return
-                  load()
-                },
-              },
-              t('reload'),
+              { className: 'ar-btn primary', type: 'button', disabled: busy, onClick: save, title: t('saveHint') },
+              busy ? t('saving') : t('save'),
+            ),
+            h(
+              'button',
+              { className: 'ar-btn', type: 'button', disabled: busy || !dirty, onClick: undo, title: t('undoHint') },
+              t('undo'),
             ),
           ),
         ),
@@ -1071,19 +1336,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'ar-row' },
-                h('span', { className: 'ar-label' }, `${t('profile')}:`),
-                profiles.map((item) =>
-                  h(
-                    'button',
-                    {
-                      key: item.id,
-                      type: 'button',
-                      className: `ar-btn tiny${item.id === selected ? ' primary' : ''}`,
-                      onClick: () => setSelected(item.id),
-                    },
-                    item.name || item.id,
-                  ),
-                ),
+                h('span', { className: 'ar-hint' }, t('routesHint')),
                 h('span', { style: S.right }, h('button', { className: 'ar-btn', type: 'button', onClick: addProfile }, `+ ${t('addProfile')}`)),
               ),
               profiles.map((item, index) =>
@@ -1093,7 +1346,6 @@ window.__ModuleLoader__.load({
                   index,
                   open: isOpen(`profile:${index}`),
                   onToggle: () => toggleCard(`profile:${index}`),
-                  selected: item.id === selected,
                   profileCount: profiles.length,
                   t,
                   catalog,
@@ -1104,6 +1356,13 @@ window.__ModuleLoader__.load({
                   onAddRoute: addRoute,
                 }),
               ),
+            )
+          : null,
+
+        tab === 'status'
+          ? h(
+              'div',
+              { className: 'ar-root', style: { gap: 12 } },
               h(
                 Card,
                 {
@@ -1183,283 +1442,6 @@ window.__ModuleLoader__.load({
             )
           : null,
 
-        tab === 'policy'
-          ? h(
-              'div',
-              { className: 'ar-root', style: { gap: 12 } },
-              h(
-                'div',
-                { className: 'ar-row' },
-                h('span', { className: 'ar-label' }, `${t('profile')}:`),
-                profiles.map((item) =>
-                  h(
-                    'button',
-                    {
-                      key: item.id,
-                      type: 'button',
-                      className: `ar-btn tiny${item.id === selected ? ' primary' : ''}`,
-                      onClick: () => setSelected(item.id),
-                    },
-                    item.name || item.id,
-                  ),
-                ),
-              ),
-              h('div', { className: 'ar-hint' }, t('policyHint')),
-              h(
-                Card,
-                {
-                  t,
-                  open: isOpen('policy'),
-                  onToggle: () => toggleCard('policy'),
-                  head: h('span', { className: 'ar-card-title' }, t('policy')),
-                },
-                h(
-                  'div',
-                  { className: 'ar-grid' },
-                  h(
-                    Field,
-                    { label: t('maxSwitches') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      max: 50,
-                      value: profile?.policy?.maxSwitches ?? 8,
-                      onChange: (event) => editPolicy({ maxSwitches: Math.max(0, Math.round(num(event.target.value, 8))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('cooldown') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      step: 0.5,
-                      value: Math.round((profile?.policy?.cooldownMs ?? 300000) / 6000) / 10,
-                      onChange: (event) => editPolicy({ cooldownMs: Math.round(num(event.target.value, 5) * 60000) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('jitter') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      max: 1,
-                      step: 0.05,
-                      value: profile?.policy?.cooldownJitterRatio ?? 0.2,
-                      onChange: (event) => editPolicy({ cooldownJitterRatio: Math.min(1, Math.max(0, num(event.target.value, 0.2))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('stickinessTtl') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      value: Math.round((profile?.policy?.stickinessTtlMs ?? 1800000) / 60000),
-                      onChange: (event) => editPolicy({ stickinessTtlMs: Math.max(0, Math.round(num(event.target.value, 30) * 60000)) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('failureWindow') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      value: Math.round((profile?.policy?.failureWindowMs ?? 120000) / 60000),
-                      onChange: (event) => editPolicy({ failureWindowMs: Math.max(0, Math.round(num(event.target.value, 2) * 60000)) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('failureThreshold') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 1,
-                      value: profile?.policy?.failureThreshold ?? 3,
-                      onChange: (event) => editPolicy({ failureThreshold: Math.max(1, Math.round(num(event.target.value, 3))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('backoff') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      value: profile?.policy?.backoffBaseMs ?? 1000,
-                      onChange: (event) => editPolicy({ backoffBaseMs: Math.max(0, Math.round(num(event.target.value, 1000))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('backoffMax') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 0,
-                      value: profile?.policy?.backoffMaxMs ?? 15000,
-                      onChange: (event) => editPolicy({ backoffMaxMs: Math.max(0, Math.round(num(event.target.value, 15000))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('recovery') },
-                    h(
-                      'select',
-                      { className: 'ar-select', value: profile?.policy?.recovery ?? 'timer', onChange: (event) => editPolicy({ recovery: event.target.value }) },
-                      h('option', { value: 'timer' }, t('recoveryTimer')),
-                      h('option', { value: 'never' }, t('recoveryNever')),
-                    ),
-                  ),
-                  h(
-                    Field,
-                    { label: t('effortPolicy') },
-                    h(
-                      'select',
-                      { className: 'ar-select', value: profile?.policy?.effortPolicy ?? 'clamp', onChange: (event) => editPolicy({ effortPolicy: event.target.value }) },
-                      h('option', { value: 'clamp' }, t('effortPolicyClamp')),
-                      h('option', { value: 'drop' }, t('effortPolicyDrop')),
-                      h('option', { value: 'fail' }, t('effortPolicyFail')),
-                    ),
-                  ),
-                  h(
-                    Field,
-                    { label: t('contextPolicy') },
-                    h(
-                      'select',
-                      { className: 'ar-select', value: profile?.policy?.contextPolicy ?? 'min', onChange: (event) => editPolicy({ contextPolicy: event.target.value }) },
-                      h('option', { value: 'min' }, t('contextMin')),
-                      h('option', { value: 'max' }, t('contextMax')),
-                    ),
-                  ),
-                  h(
-                    Field,
-                    { label: t('defaultContext') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: 1000,
-                      step: 1000,
-                      value: profile?.policy?.defaultContextWindow ?? 128000,
-                      onChange: (event) => editPolicy({ defaultContextWindow: Math.max(1000, Math.round(num(event.target.value, 128000))) }),
-                    }),
-                  ),
-                  h(
-                    Field,
-                    { label: t('utcOffset'), hint: t('timezone') },
-                    h('input', {
-                      className: 'ar-input num',
-                      type: 'number',
-                      min: -720,
-                      max: 840,
-                      value: profile?.policy?.utcOffsetMinutes ?? 480,
-                      onChange: (event) => editPolicy({ utcOffsetMinutes: Math.round(num(event.target.value, 480)) }),
-                    }),
-                  ),
-                ),
-                h(Toggle, {
-                  label: t('sticky'),
-                  title: t('stickyHint'),
-                  checked: profile?.policy?.sticky !== false,
-                  onChange: (value) => editPolicy({ sticky: value }),
-                }),
-                h(Toggle, {
-                  label: t('honorRetryAfter'),
-                  checked: profile?.policy?.honorRetryAfter !== false,
-                  onChange: (value) => editPolicy({ honorRetryAfter: value }),
-                }),
-                h(Toggle, {
-                  label: t('retryNetwork'),
-                  checked: profile?.policy?.retryOnNetwork !== false,
-                  onChange: (value) => editPolicy({ retryOnNetwork: value }),
-                }),
-                h(
-                  Field,
-                  { label: t('triggerCodes'), hint: t('triggerCodesHint') },
-                  h('input', {
-                    className: 'ar-input wide',
-                    value: (profile?.policy?.triggerCodes ?? []).join(','),
-                    onChange: (event) => editPolicy({ triggerCodes: splitList(event.target.value) }),
-                  }),
-                ),
-                h(
-                  Field,
-                  { label: t('triggerStatuses'), hint: t('triggerStatusesHint') },
-                  h('input', {
-                    className: 'ar-input wide',
-                    value: (profile?.policy?.triggerStatuses ?? []).join(','),
-                    onChange: (event) => editPolicy({ triggerStatuses: splitList(event.target.value).map((item) => Math.round(num(item, 0))).filter((item) => item > 0) }),
-                  }),
-                ),
-              ),
-              h(
-                Card,
-                {
-                  t,
-                  open: isOpen('windows'),
-                  onToggle: () => toggleCard('windows'),
-                  head: h('span', { className: 'ar-card-title' }, t('timeWindows')),
-                  actions: [
-                    h('button', { key: 'add', className: 'ar-btn tiny', type: 'button', onClick: addWindow }, t('addWindow')),
-                    h('button', { key: 'preset', className: 'ar-btn tiny', type: 'button', onClick: presetDeepSeek }, t('presetDeepSeek')),
-                  ],
-                },
-                h('div', { className: 'ar-hint' }, t('timeWindowHint')),
-                windows.length === 0
-                  ? h('div', { className: 'ar-muted' }, t('noWindows'))
-                  : windows.map((window, index) =>
-                      h(
-                        'div',
-                        { key: index, className: 'ar-window' },
-                        h(
-                          'div',
-                          { className: 'ar-row' },
-                          h('input', {
-                            className: 'ar-input grow',
-                            value: window.label ?? '',
-                            placeholder: t('windowLabel'),
-                            onChange: (event) => editWindow(index, { label: event.target.value }),
-                          }),
-                          h('input', {
-                            className: 'ar-input num',
-                            type: 'time',
-                            value: minutesToClock(window.from),
-                            onChange: (event) => editWindow(index, { from: event.target.value }),
-                          }),
-                          h('span', { className: 'ar-muted' }, '→'),
-                          h('input', {
-                            className: 'ar-input num',
-                            type: 'time',
-                            value: minutesToClock(window.to),
-                            onChange: (event) => editWindow(index, { to: event.target.value }),
-                          }),
-                          h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => removeWindow(index) }, '✕'),
-                        ),
-                        h('input', {
-                          className: 'ar-input wide',
-                          value: (window.order ?? []).join(', '),
-                          placeholder: t('windowOrderHint'),
-                          onChange: (event) =>
-                            editWindow(index, {
-                              order: event.target.value
-                                .split(',')
-                                .map((item) => item.trim())
-                                .filter((item) => item !== ''),
-                            }),
-                        }),
-                      ),
-                    ),
-              ),
-            )
-          : null,
-
         tab === 'json'
           ? h(
               'div',
@@ -1499,9 +1481,13 @@ window.__ModuleLoader__.load({
                   {
                     className: 'ar-btn',
                     type: 'button',
-                    onClick: () => setJsonText(JSON.stringify(serverConfig ?? draft, null, 2)),
+                    onClick: () => {
+                      if (serverConfig === null) return
+                      setJsonText(JSON.stringify(serverConfig, null, 2))
+                      setJsonError('')
+                    },
                   },
-                  t('reload'),
+                  t('undo'),
                 ),
               ),
             )
