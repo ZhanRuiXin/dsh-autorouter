@@ -43,9 +43,19 @@ DSH 只在插件声明了 `peerDependencies` 时才会把 `@deepseek-ai/*` 解�
 进程会报 `Cannot find package '@deepseek-ai/schemastery'`，插件行停在 `inactive`
 （`cordis_inspect` 的 Config 状态不会是 `schema`）。
 
-设置页需要有可写的 profile 行。bundle 自带的 patch 只会插出一条 `include:` 行，
-它不产生 `settings.describe()` 里的 section，保存会报 `no profile entry`。在
-`cordis.patch.yml` 里补一条同名行（会覆盖 bundle 的默认 config）即可：
+设置页出现的硬性条件在 schema 上，不在 profile 行上。`settings.describe()` 只投影
+带 `meta.volatile` 的配置：`volatileForm()` 在整棵 schema 里找不到 volatile 字段时
+返回 `undefined`，该行就被整个跳过，保存时报 `no profile entry`。所以 `Config` 必须
+标成活的：
+
+```js
+export const Config = z.object({ /* … */ }).extra('volatile', true)
+```
+
+bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `describe()` 的 `ns`
+沿用这个 id；宿主侧因此按 `llm-autorouter`、`include:llm-autorouter`、
+`*:llm-autorouter` 依次匹配，而不是硬编码一个名字。profile 里再补一条同名行不是必需，
+但可以覆盖默认 `config`：
 
 ```yaml
 - id: llm-autorouter

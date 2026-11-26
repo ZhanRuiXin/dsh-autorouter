@@ -44,7 +44,7 @@ export const Config = z.object({
   profiles: z.array(z.any()).default([]),
   gateway: z.any(),
   service: z.any(),
-})
+}).extra('volatile', true)
 
 const isLiveRef = (value) => typeof value === 'object' && value !== null && typeof value.get === 'function'
 

@@ -2,7 +2,10 @@ function node(extra = {}) {
   return {
     ...extra,
     default(value) {
-      return { ...extra, default: value }
+      return node({ ...extra, default: value })
+    },
+    extra(key, value) {
+      return node({ ...extra, [key]: value })
     },
   }
 }
