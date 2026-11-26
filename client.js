@@ -43,6 +43,10 @@ window.__ModuleLoader__.load({
 .ar-field{display:flex;flex-direction:column;gap:3px;min-width:0}
 .ar-label{font-size:11.5px;opacity:.68}
 .ar-input,.ar-select{background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.30);color:inherit;border-radius:6px;padding:3px 6px;font:inherit;font-size:12px;min-width:0}
+.ar-root{color-scheme:light}
+.ar-root[data-scheme="dark"]{color-scheme:dark}
+.ar-select option{background:Canvas;color:CanvasText}
+.ar-textarea{color-scheme:inherit}
 .ar-input:focus,.ar-select:focus{outline:2px solid rgba(59,130,246,.45);outline-offset:0}
 .ar-input.num{width:82px}
 .ar-input.wide{width:100%}
@@ -83,6 +87,8 @@ window.__ModuleLoader__.load({
       reload: '重新载入',
       dirty: '有未保存的改动',
       saved: '已保存，新配置已生效',
+      duplicateProfile: '档位 id 不能重复，否则保存时会丢掉其中一个档位',
+      profileIdRequired: '档位 id 不能为空',
       failed: '保存失败',
       conflict: '配置已被其他窗口修改。载入服务器版本后重试。',
       loadServer: '载入服务器版本',
@@ -193,6 +199,8 @@ window.__ModuleLoader__.load({
       reload: 'Reload',
       dirty: 'Unsaved changes',
       saved: 'Saved. The new config is live.',
+      duplicateProfile: 'Profile ids must be unique, or saving drops one of them.',
+      profileIdRequired: 'A profile id cannot be empty.',
       failed: 'Save failed',
       conflict: 'This config was changed in another window. Load the server version first.',
       loadServer: 'Load server version',
@@ -336,6 +344,33 @@ window.__ModuleLoader__.load({
       const minutes = Math.round(seconds / 60)
       if (minutes < 60) return `${minutes}m`
       return `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ''}`
+    }
+
+    /**
+     * Native select popups are painted by the browser, so they follow the
+     * element's `color-scheme`, not our CSS. Prefer an explicit scheme declared
+     * by the host, then its dark/light marker, then the OS preference.
+     */
+    function detectScheme() {
+      if (typeof window === 'undefined' || typeof document === 'undefined') return 'light'
+      try {
+        const root = document.documentElement
+        const body = document.body
+        const declared = String(getComputedStyle(root).colorScheme ?? '').toLowerCase()
+        if (declared.includes('dark') && !declared.includes('light')) return 'dark'
+        if (declared.includes('light') && !declared.includes('dark')) return 'light'
+        for (const element of [root, body]) {
+          if (element === null || element === undefined) continue
+          const theme = String(element.getAttribute?.('data-theme') ?? '').toLowerCase()
+          if (theme === 'dark') return 'dark'
+          if (theme === 'light') return 'light'
+          if (element.classList?.contains('dark')) return 'dark'
+          if (element.classList?.contains('light')) return 'light'
+        }
+        return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      } catch {
+        return 'light'
+      }
     }
 
     function Field(props) {
@@ -680,7 +715,28 @@ window.__ModuleLoader__.load({
       const [probes, setProbes] = useState({})
       const [jsonText, setJsonText] = useState('')
       const [jsonError, setJsonError] = useState('')
+      const [scheme, setScheme] = useState(() => detectScheme())
       const alive = useRef(true)
+
+      useEffect(() => {
+        const sync = () => setScheme(detectScheme())
+        sync()
+        const media = window.matchMedia?.('(prefers-color-scheme: dark)')
+        media?.addEventListener?.('change', sync)
+        const observer =
+          typeof MutationObserver === 'function'
+            ? new MutationObserver(sync)
+            : undefined
+        if (observer !== undefined) {
+          const options = { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] }
+          observer.observe(document.documentElement, options)
+          if (document.body) observer.observe(document.body, options)
+        }
+        return () => {
+          media?.removeEventListener?.('change', sync)
+          observer?.disconnect()
+        }
+      }, [])
 
       const flash = (message) => {
         setNotice(message)
@@ -756,10 +812,13 @@ window.__ModuleLoader__.load({
         setDirty(true)
       }
 
-      const editProfile = (index, patch) =>
+      const editProfile = (index, patch) => {
+        const target = profiles[index]
+        if (patch.id !== undefined && target !== undefined && selected === target.id) setSelected(patch.id)
         editDraft((next) => {
           next.profiles[index] = { ...next.profiles[index], ...patch }
         })
+      }
 
       const editPolicy = (patch) =>
         editDraft((next) => {
@@ -769,6 +828,19 @@ window.__ModuleLoader__.load({
 
       async function save() {
         if (draft === null || busy) return
+        const ids = new Set()
+        for (const item of profiles) {
+          const id = typeof item.id === 'string' ? item.id.trim() : ''
+          if (id === '') {
+            setError(t('profileIdRequired'))
+            return
+          }
+          if (ids.has(id)) {
+            setError(t('duplicateProfile'))
+            return
+          }
+          ids.add(id)
+        }
         setBusy(true)
         setError('')
         try {
@@ -886,7 +958,7 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { className: 'ar-root' },
+        { className: 'ar-root', 'data-scheme': scheme },
         h(
           'div',
           { className: 'ar-head' },
@@ -953,7 +1025,7 @@ window.__ModuleLoader__.load({
               ),
               profiles.map((item, index) =>
                 h(ProfileCard, {
-                  key: item.id,
+                  key: index,
                   profile: item,
                   index,
                   selected: item.id === selected,
@@ -1331,6 +1403,36 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Settings navigation glyph: one source fanning out into three routes.
+     * Same contract as the shipped section icons — `{ size }`, 24-unit box,
+     * `currentColor`, so it inherits the sidebar's own colour and dark mode.
+     */
+    function AutoRouterIcon({ size = 16 }) {
+      return h(
+        'svg',
+        {
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.7,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': true,
+        },
+        h('circle', { cx: 4.6, cy: 12, r: 1.5 }),
+        h('path', { d: 'M6.5 12h2.6' }),
+        h('path', { d: 'M9.1 12c3.2 0 3.2-6.2 6.4-6.2h2.1' }),
+        h('path', { d: 'M9.1 12h8.4' }),
+        h('path', { d: 'M9.1 12c3.2 0 3.2 6.2 6.4 6.2h2.1' }),
+        h('circle', { cx: 19.2, cy: 5.8, r: 1.4 }),
+        h('circle', { cx: 19.2, cy: 12, r: 1.4 }),
+        h('circle', { cx: 19.2, cy: 18.2, r: 1.4 }),
+      )
+    }
+
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
@@ -1356,6 +1458,10 @@ window.__ModuleLoader__.load({
             },
             Page,
           ),
+        )
+
+        ctx.slots.inject('settings.section.icon', () =>
+          ctx.slots.register({ name: 'settings.section.icon', id: 'autorouter' }, AutoRouterIcon),
         )
       },
     }

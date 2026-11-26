@@ -49,7 +49,7 @@ test('client registers the AutoRouter settings section', () => {
   assert.deepEqual(client.inject, ['slots', 'locale'])
 
   const effects = []
-  let registration
+  const registered = []
   const ctx = {
     effect(fn, label) {
       effects.push(label)
@@ -69,12 +69,14 @@ test('client registers the AutoRouter settings section', () => {
     },
     slots: {
       inject(name, callback) {
-        assert.equal(name, 'settings.section')
+        registered.push({ name })
         callback()
         return () => {}
       },
       register(descriptor, component) {
-        registration = { descriptor, component }
+        const slot = registered[registered.length - 1]
+        slot.descriptor = descriptor
+        slot.component = component
         return () => {}
       },
     },
@@ -83,10 +85,20 @@ test('client registers the AutoRouter settings section', () => {
   client.apply(ctx)
 
   assert.deepEqual(effects, ['autorouter: styles', 'autorouter: locale'])
-  assert.equal(registration.descriptor.name, 'settings.section')
-  assert.equal(registration.descriptor.id, 'autorouter')
-  assert.equal(registration.descriptor.order, 16)
-  assert.equal(registration.descriptor.locale, 'settings.autorouter')
-  assert.equal(registration.descriptor.label(), 'settings.autorouter.nav')
-  assert.equal(typeof registration.component, 'function')
+  assert.deepEqual(
+    registered.map((slot) => slot.name),
+    ['settings.section', 'settings.section.icon'],
+  )
+
+  const [section, icon] = registered
+  assert.equal(section.descriptor.name, 'settings.section')
+  assert.equal(section.descriptor.id, 'autorouter')
+  assert.equal(section.descriptor.order, 16)
+  assert.equal(section.descriptor.locale, 'settings.autorouter')
+  assert.equal(section.descriptor.label(), 'settings.autorouter.nav')
+  assert.equal(typeof section.component, 'function')
+
+  assert.equal(icon.descriptor.name, 'settings.section.icon')
+  assert.equal(icon.descriptor.id, 'autorouter')
+  assert.equal(typeof icon.component, 'function')
 })
