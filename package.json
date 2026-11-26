@@ -1,6 +1,6 @@
 {
   "name": "dsh-autorouter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AutoRouter — one DSH provider in front of a fallback chain over every registered route, with reasoning effort inherited from the caller.",
   "type": "module",
   "license": "MIT",
@@ -41,9 +41,9 @@
     "locale",
     "icon.svg",
     "README.md",
-    "README.zh-CN.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "docs"
   ],
   "scripts": {
     "test": "node --test test/*.test.js"

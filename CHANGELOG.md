@@ -4,7 +4,15 @@ Notable changes to `dsh-autorouter`. The shape follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses semantic versioning.
 Every version below was a working bundle: the suite passes on each tagged commit.
 
-## Unreleased
+## 0.2.1
+
+- README rewritten in the house style of the sibling `research-team-preset` plugin: badge row,
+  at-a-glance table, install specs for both the plugins page and the CLI, first-run walkthrough,
+  one troubleshooting entry per symptom, and limitations stated as limitations.
+- the Chinese translation now lives in `docs/README.zh-CN.md` and cross-links both ways; the root
+  `README.zh-CN.md` is gone, and `docs` ships in the package.
+
+## 0.2.0
 
 - **a fresh install ships no route plan**: `DEFAULT_PROFILE` is gone and
 `normalizeConfig` no longer re-adds default profiles, so nothing is routed until the
