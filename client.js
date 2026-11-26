@@ -100,7 +100,6 @@ window.__ModuleLoader__.load({
       nav: 'AutoRouter',
       title: 'AutoRouter 聚合路由',
       subtitle: '一个 provider、一条回退链：严格按顺序在已登记的 provider / model 之间尝试，失败才往后走，思考强度按目标映射。',
-      enabled: '启用 AutoRouter',
       save: '保存',
       saving: '保存中…',
       saveHint: '立即写入配置；已生效的档位会被新配置替换',
@@ -223,7 +222,6 @@ window.__ModuleLoader__.load({
       nav: 'AutoRouter',
       title: 'AutoRouter gateway',
       subtitle: 'One provider, one fallback chain: try registered providers and models strictly in order, move on only after a failure, and map reasoning effort per target.',
-      enabled: 'Enable AutoRouter',
       save: 'Save',
       saving: 'Saving…',
       saveHint: 'Write the config now; the running profiles pick it up immediately',
@@ -1632,15 +1630,9 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'ar-actions' },
-            h(Toggle, {
-              label: t('enabled'),
-              checked: draft.enabled !== false,
-              onChange: (value) => {
-                editDraft((next) => {
-                  next.enabled = value
-                })
-              },
-            }),
+            // No enable switch: the plugin is on when it is installed, and the
+            // JSON tab is the escape hatch for a hand-edited enabled:false.
+            draft.enabled === false ? h('span', { key: 'off', className: 'ar-badge warn' }, t('profileDisabled')) : null,
             dirty ? h('span', { className: 'ar-badge warn' }, t('dirty')) : null,
             h(
               'button',
