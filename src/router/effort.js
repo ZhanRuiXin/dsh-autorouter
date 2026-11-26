@@ -44,7 +44,9 @@ export function unionEfforts(infos) {
     }
     if (typeof info.defaultEffort === 'string' && byId.has(info.defaultEffort)) defaultEffort = info.defaultEffort
   }
-  if (!declared) return undefined
+  // An upstream that declares an empty list is not evidence of "no reasoning",
+  // and the host refuses an advertised model with zero efforts. Say nothing.
+  if (!declared || byId.size === 0) return undefined
   return {
     efforts: sortEfforts([...byId.values()]),
     ...(defaultEffort === undefined ? {} : { defaultEffort }),

@@ -46,16 +46,19 @@ export async function resolveProfileInfo(profile, infoOf, policy = {}) {
     .map((info) => info.context?.contextWindow)
     .filter((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)
   const fallbackWindow = policy.defaultContextWindow ?? 128000
-  const contextWindow =
-    policy.contextPolicy === 'fixed'
-      ? fallbackWindow
-      : windows.length > 0
-        ? Math.min(...windows)
-        : fallbackWindow
+  // The host validates this as a positive integer and throws otherwise, so the
+  // last step is a coercion rather than a hope.
+  const contextWindow = Math.max(
+    1,
+    Math.round(
+      policy.contextPolicy === 'fixed' ? fallbackWindow : windows.length > 0 ? Math.min(...windows) : fallbackWindow,
+    ),
+  )
 
   const maxTokens = known
     .map((info) => info.defaultMaxTokens)
     .filter((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)
+    .map((value) => Math.max(1, Math.floor(value)))
 
   const reasoning = unionEfforts(
     known.map((info) => ({ efforts: info.reasoning?.efforts, defaultEffort: info.reasoning?.defaultEffort })),
