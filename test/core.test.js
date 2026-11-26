@@ -259,6 +259,22 @@ test('a time window reorders the chain', () => {
   assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
 })
 
+test('a target that declares no reasoning gets the effort dropped, not forwarded', () => {
+  // null means the adapter reported the model itself, without a reasoning block.
+  const dropped = mapEffort('max', null, {}, {})
+  assert.deepEqual(dropped, { effort: undefined, coerced: true, reason: 'no-reasoning:max' })
+  const strict = mapEffort('max', null, {}, { effortPolicy: 'fail' })
+  assert.equal(strict.error?.code, 'UNSUPPORTED_REASONING_EFFORT')
+  // Undefined still means the lookup failed, which is not the same fact.
+  assert.deepEqual(mapEffort('max', undefined, {}, {}), {
+    effort: 'max',
+    coerced: false,
+    reason: 'target-unknown',
+  })
+  // An explicit mapping wins even when the target declared nothing.
+  assert.equal(mapEffort('max', null, { max: 'high' }, {}).effort, 'high')
+})
+
 test('a time window carries a whole fallback chain, not just a hint', () => {
   const state = new RouterState({ now: () => NOW })
   const profile = selectFixture()

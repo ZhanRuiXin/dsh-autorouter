@@ -95,6 +95,76 @@ function setup(script, overrides) {
   return { config, state, ...harness(script) }
 }
 
+test('a model that declares no reasoning never receives the parameter', async () => {
+  // The host throws UNSUPPORTED_REASONING_EFFORT before any I/O when an
+  // explicit effort reaches a model whose adapter reports no reasoning block.
+  const walk = setup([[text('ok'), ok()]], { chain: [{ provider: 'a', model: 'plain' }] })
+  const chunks = await collect(
+    walkRoute({
+      options: {
+        provider: 'autorouter',
+        model: 'p',
+        reasoningEffort: 'max',
+        messages: [{ role: 'user', content: 'hi' }],
+        sessionId: 'session-1',
+      },
+      profile: walk.config.profiles[0],
+      config: walk.config,
+      state: walk.state,
+      streamFn: walk.streamFn,
+      infoOf: async () => ({ context: { contextWindow: 128_000 } }),
+      makeError,
+      now: () => NOW,
+      random: () => 0.5,
+    }),
+  )
+  assert.equal(walk.attempts.length, 1)
+  assert.equal('reasoningEffort' in walk.attempts[0], false)
+  assert.equal(chunks.at(-1).reason.kind, 'stop')
+})
+
+test('a thrown effort rejection is repaired on the same route', async () => {
+  const attempts = []
+  const config = makeConfig({ chain: [{ provider: 'a', model: 'm1' }] })
+  const state = new RouterState({ now: () => NOW })
+  const streamFn = (options) => {
+    attempts.push({ ...options })
+    return (async function* () {
+      if (options.reasoningEffort !== undefined) {
+        throw makeError('model does not support that effort', 'UNSUPPORTED_REASONING_EFFORT')
+      }
+      yield text('ok')
+      yield ok()
+    })()
+  }
+  const chunks = await collect(
+    walkRoute({
+      options: {
+        provider: 'autorouter',
+        model: 'p',
+        reasoningEffort: 'low',
+        messages: [{ role: 'user', content: 'hi' }],
+        sessionId: 'session-1',
+      },
+      profile: config.profiles[0],
+      config,
+      state,
+      streamFn,
+      infoOf: async (provider, model) => INFO[`${provider}/${model}`],
+      makeError,
+      now: () => NOW,
+      random: () => 0.5,
+    }),
+  )
+  assert.deepEqual(
+    attempts.map((attempt) => attempt.reasoningEffort),
+    ['low', undefined],
+  )
+  assert.equal(chunks.at(-1).reason.kind, 'stop')
+  // A parameter repair is not a route failure: nothing should be cooling.
+  assert.equal(state.isCooling('a/m1', NOW), false)
+})
+
 test('pre-output failure advances to the next route', async () => {
   const walk = setup([[fail('QUOTA', 429)], [text('ok'), ok()]])
   const chunks = await collect(run(walk))

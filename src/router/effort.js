@@ -74,9 +74,26 @@ export function mapEffort(requested, target, effortMap = {}, policy = {}) {
     return { effort: mapped, coerced: mapped !== requested, reason: `mapped:${requested}->${mapped}` }
   }
   const efforts = target?.efforts
+  if (target === null) {
+    // The adapter already reported this model with no reasoning metadata at
+    // all. The host refuses an explicit effort for such a model before the
+    // request leaves the process, so passing it through cannot work.
+    const mode = policy.effortPolicy ?? 'clamp'
+    if (mode === 'fail') {
+      return {
+        effort: undefined,
+        coerced: true,
+        reason: `unsupported:${requested}`,
+        error: Object.assign(new Error(`AutoRouter: the target declares no reasoning efforts`), {
+          code: 'UNSUPPORTED_REASONING_EFFORT',
+        }),
+      }
+    }
+    return { effort: undefined, coerced: true, reason: `no-reasoning:${requested}` }
+  }
   if (!Array.isArray(efforts)) {
-    // No reasoning metadata at all: pass through, an unknown upstream is not
-    // evidence that it rejects the parameter.
+    // No metadata could be read at all: an unknown upstream is not evidence
+    // that it rejects the parameter, so the request goes out as asked.
     return { effort: requested, coerced: false, reason: 'target-unknown' }
   }
   if (efforts.length === 0) {

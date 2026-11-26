@@ -149,7 +149,10 @@ export async function* walkRoute(input) {
     } catch {
       targetInfo = undefined
     }
-    const mapping = mapEffort(options.reasoningEffort, targetInfo?.reasoning, entry.effortMap, policy)
+    // `null` means "the adapter says this model has no reasoning at all",
+    // which is a different fact from "the lookup failed" (`undefined`).
+    const targetReasoning = targetInfo === undefined ? undefined : (targetInfo.reasoning ?? null)
+    const mapping = mapEffort(options.reasoningEffort, targetReasoning, entry.effortMap, policy)
     if (mapping.coerced) {
       log.info?.(
         `llm-autorouter: effort ${options.reasoningEffort} -> ${mapping.effort ?? '(omit)'} on ${key} (${mapping.reason})`,
@@ -237,11 +240,22 @@ export async function* walkRoute(input) {
       // verdict. Only the walk's own pre-attempt errors are converted.
       if (!committed) {
         const failure = failureOf(error)
-        const verdict = classifyFailure(failure, policy, { alreadyCommitted: false })
-        if (verdict.retryable) {
-          swallowed = { chunk: failureChunk(failure), verdict }
+        // The host rejects an effort the target does not declare before any
+        // I/O, and it throws instead of yielding a finish chunk. That is the
+        // same repair as below: drop the parameter, keep the route.
+        if (failure.code === 'UNSUPPORTED_REASONING_EFFORT' && attemptOptions.reasoningEffort !== undefined) {
+          attemptOptions = { ...attemptOptions }
+          delete attemptOptions.reasoningEffort
+          repairedKey = key
+          pendingUsage = []
+          retrySameTarget = true
         } else {
-          throw error
+          const verdict = classifyFailure(failure, policy, { alreadyCommitted: false })
+          if (verdict.retryable) {
+            swallowed = { chunk: failureChunk(failure), verdict }
+          } else {
+            throw error
+          }
         }
       } else {
         throw error
