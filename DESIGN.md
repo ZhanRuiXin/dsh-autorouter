@@ -2,7 +2,7 @@
 
 > 目标：DSH 的模型选择器里只出现一个 provider `autorouter`（显示名 **AutoRouter**）。所有请求按一条可配置的回退链，在已登记的 provider/model 之间做**额度感知**的选择与轮换；思考强度（reasoning effort）随请求继承到实际执行的路由；全部设置通过 **设置 → AutoRouter** 页面完成，不要求用户编辑 YAML。
 
-状态：已实现（v0.1.9，2026-11-26）。
+状态：已实现（v0.1.14，2026-11-26）。
 
 **实现与初稿的差异以本节为准：**
 
@@ -20,7 +20,18 @@
   `budget` 字段与 §5.5 的额度账本全部移除。本地账本只能猜上游配额，却会静默拦掉请求；
   真正的配额信号是上游的 429，冷却与失败计数才是本插件该记的东西。
 - 实际 `Entry` 字段：`{ id, provider, model, enabled, cooldownMs, effortMap }`；
-  `Profile` 字段：`{ id, name, enabled, description, chain, policy }`。
+  `Profile` 字段：`{ id, name, enabled, description, chain, policy }`。页面不再暴露档位级
+  `enabled` 开关：档位存在就参与路由，唯一的开关是每条路由前的勾选；手写 `enabled: false`
+  仍生效，卡片头以「已停用」标出。
+- 虚拟模型元数据按宿主校验器收口：`reasoning.efforts` 为空视为“上游没声明”，不下发空列表；
+  `contextWindow` / `defaultMaxTokens` 取整且至少为 1。
+- 继承的思考强度遇到「已知不声明思考」的目标（`resolveModelInfo` 返回 `reasoning: undefined`）
+  直接丢弃，而不是先发出去再靠 `UNSUPPORTED_REASONING_EFFORT` 修一次——否则链尾的
+  `deepseek-account/deepseek-flash` 会在最需要回退时整通失败。
+- `/api/autorouter/try` 以 `finish.reason.kind` 判成功（宿主把终态报成 `{ kind, failure }`，
+  旧的字符串比较会把失败读成成功）。
+- 设置页「试一次」按钮与状态卡里的 `host vX.Y.Z` 版本行用于重启后自检：版本号与页面
+  期望不一致就说明宿主仍在跑旧代码。
 - 设置页卡片可收起/展开（点卡片头任意空白也算），折叠状态存 `localStorage`（`dsh-autorouter:collapsed`）。
 - 时间段与策略不再放在独立 tab：每个档位一张卡片，标识 / 链 / 时间段 / 策略都在卡片内，
   随卡片收起，不再有"先选中某个档位"的概念（`selected` 状态已删除）。

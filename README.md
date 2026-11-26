@@ -92,6 +92,11 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 头部两个按钮：**保存**随时可点（不必先产生改动），成功后立即刷新页面上的配置与版本号；
 **撤销**丢弃未保存的改动、回到上次保存的配置，不再重新请求服务器。
 
+**实时状态**页右上角有 **试一次**：它会用 `autorouter/<档位>` 真实发一条极小请求（默认
+`Reply with the single word: ok`，`maxTokens` 24），返回命中路由、耗时与文本；失败时把终态
+原因带回来。状态卡同时显示 `host vX.Y.Z` —— 页面拿到的是宿主自己报的版本，和 `package.json`
+对不上就说明 DSH 还在跑旧进程，此时改宿主侧代码不会生效。
+
 页面通过同源 `/api/autorouter/*` 与宿主通信，配置写入仍走
 `settings.replace(ns, value, revision)`，因此有版本冲突保护（409 时提示重载）。
 
