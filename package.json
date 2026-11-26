@@ -5,6 +5,14 @@
   "type": "module",
   "license": "MIT",
   "author": "Ruixin Zhan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZhanRuiXin/dsh-autorouter.git"
+  },
+  "homepage": "https://github.com/ZhanRuiXin/dsh-autorouter#readme",
+  "bugs": {
+    "url": "https://github.com/ZhanRuiXin/dsh-autorouter/issues"
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",
