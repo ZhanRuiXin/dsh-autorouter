@@ -114,5 +114,8 @@ DSH 只在插件声明了 `peerDependencies` 时才会把 `@deepseek-ai/*` 解�
 node --test "test/*.test.js"
 ```
 
-`src/config.js`、`src/state.js`、`src/router/*` 不依赖 `@deepseek-ai/*`，可以脱离 DSH 单测；
-`src/adapter.js`、`src/http.js`、`index.js`、`client.js` 只在 DSH 里加载。
+`src/config.js`、`src/state.js`、`src/router/*` 不依赖 `@deepseek-ai/*`，可以脱离 DSH 单测。
+`test/plugin.test.js` 用 `test/stubs/hooks.mjs` 把 `@deepseek-ai/dsh-llm` 与
+`@deepseek-ai/schemastery` 映射到本地桩，因此 `apply()`、六个 HTTP 路由的收发
+（含 409 revision 冲突）和 `client.js` 的注册形状也能在纯 Node 下验证。
+真实页面渲染与一次真实补全仍要在 DSH 里确认。
