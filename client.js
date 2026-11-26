@@ -215,6 +215,7 @@ window.__ModuleLoader__.load({
     tryOnce: '试一次',
     tryOk: '打通',
     tryFailed: '未打通',
+    tryOutdated: '宿主还没重启：这条检查要新版本才有',
       emptyChain: '链路为空。至少添加一条路由后才能接管调用。',
       entryInvalid: 'provider / model 不能为空',
     }
@@ -338,6 +339,7 @@ window.__ModuleLoader__.load({
     tryOnce: 'Try once',
     tryOk: 'worked',
     tryFailed: 'failed',
+    tryOutdated: 'the host has not been restarted: this check needs the new build',
       emptyChain: 'The chain is empty. Add at least one route before it can take over.',
       entryInvalid: 'provider / model must not be empty',
     }
@@ -1429,7 +1431,11 @@ window.__ModuleLoader__.load({
           else setError(`${t('tryFailed')}: ${result.error ?? result.reason ?? ''}`)
           await refreshStatus()
         } catch (failure) {
-          if (alive.current) setError(`${t('tryFailed')}: ${failure.message}`)
+          if (!alive.current) return
+          // A page that was reloaded while the host kept the old process is the
+          // one case worth naming: the route simply is not there yet.
+          if (failure.status === 404 || failure.status === 405) setError(t('tryOutdated'))
+          else setError(`${t('tryFailed')}: ${failure.message}`)
         } finally {
           if (alive.current) setBusy(false)
         }
