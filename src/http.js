@@ -255,6 +255,67 @@ export function installRoutes(deps) {
     },
     {
       kind: 'exact',
+      path: '/api/autorouter/try',
+      auth: 'required',
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        const llm = getLlm()
+        if (llm === undefined || typeof llm.stream !== 'function') {
+          return json(res, 200, { ok: false, error: 'llm runtime unavailable' })
+        }
+        let body
+        try {
+          body = await readJson(req)
+        } catch (error) {
+          return json(res, error.statusCode ?? 400, { error: error.message })
+        }
+        const config = getConfig()
+        const profile =
+          typeof body.profile === 'string' && body.profile !== ''
+            ? body.profile
+            : (config.profiles ?? []).find((item) => item.enabled !== false)?.id
+        if (typeof profile !== 'string' || profile === '') {
+          return json(res, 200, { ok: false, error: 'no profile to try' })
+        }
+        const prompt =
+          typeof body.prompt === 'string' && body.prompt.trim() !== ''
+            ? body.prompt
+            : 'Reply with the single word: ok'
+        const maxTokens = Number.isFinite(body.maxTokens) ? Math.max(8, Math.min(256, body.maxTokens)) : 24
+        const startedAt = Date.now()
+        let text = ''
+        let finish
+        try {
+          const stream = llm.stream({
+            provider: PROVIDER_ID,
+            model: profile,
+            messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+            temperature: 0,
+            maxTokens,
+          })
+          for await (const chunk of stream) {
+            if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
+            else if (chunk?.type === 'finish') finish = chunk
+          }
+        } catch (error) {
+          return json(res, 200, { ok: false, profile, ms: Date.now() - startedAt, error: error.message })
+        }
+        const reason = finish?.reason
+        const ok = reason !== undefined && reason !== 'error' && reason !== 'aborted'
+        json(res, 200, {
+          ok,
+          profile,
+          ms: Date.now() - startedAt,
+          route: getState().stats.lastRoute,
+          reason,
+          text: text.slice(0, 400),
+          usage: finish?.usage,
+          error: ok ? undefined : finish?.failure?.message,
+        })
+      },
+    },
+    {
+      kind: 'exact',
       path: '/api/autorouter/cooldown',
       auth: 'required',
       handler: async (req, res) => {

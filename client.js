@@ -148,8 +148,7 @@ window.__ModuleLoader__.load({
       policyHint: '这些策略只作用于本档位。',
       timeWindows: '时间段',
       addWindow: '添加时段',
-      presetDeepSeek: 'DeepSeek 峰谷',
-      collapseCard: '收起',
+        collapseCard: '收起',
       expandCard: '展开',
       timeWindowHint: '每个时段有自己的回退链：在「回退链」里切到该时段，用上下箭头调整顺序。',
       noWindows: '未设置时段，始终按链顺序尝试。',
@@ -213,6 +212,9 @@ window.__ModuleLoader__.load({
       clearCooldown: '清除冷却',
       clearAll: '全部清除',
       refresh: '刷新',
+    tryOnce: '试一次',
+    tryOk: '打通',
+    tryFailed: '未打通',
       emptyChain: '链路为空。至少添加一条路由后才能接管调用。',
       entryInvalid: 'provider / model 不能为空',
     }
@@ -269,8 +271,7 @@ window.__ModuleLoader__.load({
       policyHint: 'Applies to this profile only.',
       timeWindows: 'Time windows',
       addWindow: 'Add window',
-      presetDeepSeek: 'DeepSeek peak / off-peak',
-      collapseCard: 'Collapse',
+        collapseCard: 'Collapse',
       expandCard: 'Expand',
       timeWindowHint: 'Each window has its own fallback chain: switch to it in the chain tabs and reorder with the arrows.',
       noWindows: 'No windows configured; the chain order always applies.',
@@ -334,6 +335,9 @@ window.__ModuleLoader__.load({
       clearCooldown: 'Clear cooldown',
       clearAll: 'Clear all',
       refresh: 'Refresh',
+    tryOnce: 'Try once',
+    tryOk: 'worked',
+    tryFailed: 'failed',
       emptyChain: 'The chain is empty. Add at least one route before it can take over.',
       entryInvalid: 'provider / model must not be empty',
     }
@@ -1236,39 +1240,13 @@ window.__ModuleLoader__.load({
           },
         ])
       const remove = (index) => onChange(windows.filter((_, at) => at !== index))
-      const preset = () => {
-        const official = routes.filter((key) => key.startsWith('deepseek-account/'))
-        const others = routes.filter((key) => !official.includes(key))
-        onChange([
-          {
-            id: 'deepseek-offpeak',
-            label: 'DeepSeek 低谷',
-            ranges: [{ from: '00:30', to: '08:30' }],
-            order: [...official, ...others],
-          },
-          {
-            id: 'deepseek-peak',
-            label: 'DeepSeek 标准',
-            ranges: [{ from: '08:30', to: '00:30' }],
-            order: [...others, ...official],
-          },
-        ])
-      }
-
       return h(
         Section,
         {
           t,
           title: t('timeWindows'),
           count: windows.length,
-          actions: [
-            h('button', { key: 'add', className: 'ar-btn tiny', type: 'button', onClick: add }, `+ ${t('addWindow')}`),
-            h(
-              'button',
-              { key: 'preset', className: 'ar-btn tiny', type: 'button', onClick: preset, disabled: routes.length === 0 },
-              t('presetDeepSeek'),
-            ),
-          ],
+          actions: [h('button', { key: 'add', className: 'ar-btn tiny', type: 'button', onClick: add }, `+ ${t('addWindow')}`)],
         },
         h('div', { className: 'ar-hint' }, t('timeWindowHint')),
         windows.length === 0
@@ -1433,6 +1411,27 @@ window.__ModuleLoader__.load({
           setStatus(state.status ?? null)
         } catch {
           /* keep the last snapshot */
+        }
+      }
+
+      /**
+       * Sends one tiny completion through the router itself — the only check that
+       * proves the chain, the credential and the upstream dialect all work.
+       */
+      async function tryOnce() {
+        if (busy) return
+        setBusy(true)
+        setError('')
+        try {
+          const result = await api('/api/autorouter/try', { method: 'POST', body: JSON.stringify({}) })
+          if (!alive.current) return
+          if (result.ok) flash(`${t('tryOk')} · ${result.ms}ms · ${result.route ?? result.profile}`)
+          else setError(`${t('tryFailed')}: ${result.error ?? result.reason ?? ''}`)
+          await refreshStatus()
+        } catch (failure) {
+          if (alive.current) setError(`${t('tryFailed')}: ${failure.message}`)
+        } finally {
+          if (alive.current) setBusy(false)
         }
       }
 
@@ -1701,6 +1700,7 @@ window.__ModuleLoader__.load({
                     h('span', { key: 'count', className: 'ar-muted' }, `${routes.length} ${t('routes')}`),
                   ],
                   actions: [
+                    h('button', { key: 'try', className: 'ar-btn tiny', type: 'button', onClick: tryOnce, disabled: busy }, t('tryOnce')),
                     h('button', { key: 'refresh', className: 'ar-btn tiny', type: 'button', onClick: refreshStatus }, t('refresh')),
                     h('button', { key: 'clear', className: 'ar-btn tiny', type: 'button', onClick: () => clearCooldown() }, t('clearAll')),
                   ],

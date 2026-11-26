@@ -42,6 +42,7 @@ function makeHarness() {
     },
   }
   let lagging = false
+  let failing = false
 
   const settings = {
     describe: () => [{ ns: ENTRY_ID, value: visible, revision: visibleRevision }],
@@ -59,6 +60,19 @@ function makeHarness() {
   }
 
   const llm = {
+    /** Dispatches like the host does: our own provider goes through the adapter. */
+    stream(options) {
+      const registration = adapters.find((item) => item.providers.includes(options.provider))
+      if (registration !== undefined) return registration.adapter.stream(options)
+      return (async function* upstream() {
+        if (failing) {
+          yield { type: 'finish', reason: 'error', failure: { message: 'upstream boom', code: 'AUTH' } }
+          return
+        }
+        yield { type: 'text-delta', text: 'ok' }
+        yield { type: 'finish', reason: 'stop', usage: { inputTokens: 3, outputTokens: 1 } }
+      })()
+    },
     registerAdapter(providers, adapter) {
       adapters.push({ providers, adapter })
       return () => {}
@@ -90,9 +104,6 @@ function makeHarness() {
       }
     },
     imageRequestPricing: () => undefined,
-    stream: () => {
-      throw new Error('nested stream must not run in this test')
-    },
   }
 
   const webServer = {
@@ -128,7 +139,10 @@ function makeHarness() {
     },
   }
 
-  return { ctx, provided, routes, adapters, saved, effects, listeners, lag: harness.lag, get revision() { return revision } }
+  return { ctx, provided, routes, adapters, saved, effects, listeners, lag: harness.lag,
+    failStream(active) {
+      failing = active
+    }, get revision() { return revision } }
 }
 
 function fakeRes() {
@@ -164,7 +178,7 @@ async function call(harness, path, { method = 'GET', body } = {}) {
   return { status: res.status, body: res.body === '' ? undefined : JSON.parse(res.body) }
 }
 
-test('apply registers one provider, one default virtual model and six routes', async () => {
+test('apply registers one provider, one default virtual model and seven routes', async () => {
   const harness = makeHarness()
   plugin.apply(harness.ctx, {})
 
@@ -197,6 +211,7 @@ test('apply registers one provider, one default virtual model and six routes', a
     '/api/autorouter/probe',
     '/api/autorouter/selection',
     '/api/autorouter/state',
+    '/api/autorouter/try',
   ])
   for (const route of harness.routes.values()) assert.equal(route.auth, 'required')
 })
@@ -256,6 +271,30 @@ test('a save answers with the written config even while the host projection lags
   const settled = await call(harness, '/api/autorouter/state')
   assert.equal(settled.body.config.enabled, false)
   assert.equal(settled.body.revision, 4)
+})
+
+test('a try request streams through the router and reports the route that served it', async () => {
+  const harness = makeHarness()
+  plugin.apply(harness.ctx, {})
+
+  const result = await call(harness, '/api/autorouter/try', { method: 'POST', body: { prompt: 'hi' } })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.ok, true, JSON.stringify(result.body))
+  assert.equal(result.body.reason, 'stop')
+  assert.equal(result.body.profile, 'auto')
+  assert.equal(result.body.route, 'opendesign/deepseek-v4.1-flash-eco')
+  assert.equal(result.body.text, 'ok')
+})
+
+test('a try request surfaces a terminal failure instead of throwing', async () => {
+  const harness = makeHarness()
+  harness.failStream(true)
+  plugin.apply(harness.ctx, {})
+
+  const result = await call(harness, '/api/autorouter/try', { method: 'POST', body: {} })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.ok, false)
+  assert.ok(typeof result.body.error === 'string' && result.body.error !== '')
 })
 
 test('catalog, probe and cooldown answer from the live llm runtime', async () => {

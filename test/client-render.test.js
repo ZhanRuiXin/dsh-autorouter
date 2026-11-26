@@ -461,6 +461,10 @@ test('the status tab owns the live route table', () => {
   assert.equal(rows.length, 3, 'a header row and one row per route')
 
   assert.ok(text(tree).includes('cooling'), 'a cooling route shows its badge')
+
+  const labels = findAll(tree, (node) => node.type === 'button').map(text)
+  assert.ok(labels.includes('tryOnce'), 'the status card can send one real request through the router')
+  assert.ok(text(tree).includes('hostVersionUnknown'), 'the page says so when the host reports no plugin version')
   assert.ok(text(tree).includes('abcdef12'), 'the sticky session is listed')
 })
 
