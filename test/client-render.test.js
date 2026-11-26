@@ -389,7 +389,8 @@ test('the routes tab renders one card per profile, without the status card', () 
 
   const cards = findAll(tree, hasClass('ar-card'))
   assert.equal(cards.length, 1, 'the live status moved off this tab, so one profile means one card')
-  assert.equal(findAll(tree, hasClass('ar-chevron')).length, 1, 'every card carries a disclosure button')
+  // One chevron on the card head, one on the policy section inside it.
+  assert.equal(findAll(tree, hasClass('ar-chevron')).length, 2, 'the card and its policy section both collapse')
   assert.equal(findAll(tree, hasClass('ar-card-body')).length, 1, 'an open card exposes its body')
 
   assert.equal(findAll(tree, (node) => node.type === 'table').length, 0, 'no live route table on the chain tab')
@@ -457,12 +458,23 @@ test('the time windows and the policy live inside the profile card', () => {
   const numbers = inputs.filter((node) => node.props.type === 'number')
   assert.ok(numbers.length >= 8, `every policy field renders inside the card (got ${numbers.length})`)
 
-  // Two route rows carry their own effort-map disclosure, then the windows
-  // and the policy of the profile itself.
+  // The card is split into titled sections instead of tabs or floating
+  // disclosures, so the windows and the policy read as parts of the card.
+  const sections = findAll(card, hasClass('ar-section'))
+  assert.equal(sections.length, 3, 'chain, time windows and policy')
+  const titles = sections.map((node) => findAll(node, hasClass('ar-section-title')).map(text)[0])
+  assert.deepEqual(titles, ['chain', 'timeWindows', 'policy'])
+
+  // Which routes come first in a window is picked from the chain, not typed
+  // as provider/model keys.
+  const chips = findAll(card, hasClass('ar-chip'))
+  assert.equal(chips.length, 2, 'one priority chip per chain route')
+  assert.equal(chips.filter(hasClass('on')).length, 1, 'the window puts the DeepSeek route first')
+  assert.equal(chips.reduce((total, chip) => total + findAll(chip, (node) => node.props?.type === 'checkbox').length, 0), 2, 'each chip is a real checkbox')
+
+  // The only remaining <details> are the per-route effort maps.
   const details = findAll(card, hasClass('ar-details'))
-  assert.equal(details.length, 4, 'two effort disclosures plus windows and policy')
-  const summaries = details.map((node) => findAll(node, (child) => child.type === 'summary').map(text))
-  assert.deepEqual(summaries.slice(-2), [['timeWindows · 1'], ['policy']])
+  assert.equal(details.length, 2, 'effort maps stay disclosures; windows and policy are sections')
 })
 
 test('save is always available and undo is its local inverse', () => {

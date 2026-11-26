@@ -84,6 +84,19 @@ window.__ModuleLoader__.load({
 .ar-details[open]>.ar-stack,.ar-details[open]>.ar-window,.ar-details[open]>.ar-hint,.ar-details[open]>.ar-muted,.ar-details[open]>.ar-row{margin-top:7px}
 .ar-stack{display:flex;flex-direction:column;gap:8px}
 .ar-window{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(128,128,128,.16);border-radius:8px}
+.ar-section{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid rgba(128,128,128,.18);margin-top:1px}
+.ar-card-body>.ar-section:first-child{padding-top:0;border-top:none}
+.ar-section-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:22px}
+.ar-section-head.clickable{cursor:pointer}
+.ar-section-head:hover .ar-chevron{opacity:1}
+.ar-section-title{font-size:12px;font-weight:600;letter-spacing:.01em}
+.ar-section-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
+.ar-section-body{display:flex;flex-direction:column;gap:8px}
+.ar-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ar-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;border:1px solid rgba(128,128,128,.30);font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap}
+.ar-chip:hover{border-color:rgba(128,128,128,.55)}
+.ar-chip.on{border-color:rgba(59,130,246,.65);background:rgba(59,130,246,.14)}
+.ar-chip input{margin:0;padding:0;accent-color:#3b82f6}
 `
 
     const ZH = {
@@ -141,10 +154,10 @@ window.__ModuleLoader__.load({
       presetDeepSeek: 'DeepSeek 峰谷',
       collapseCard: '收起',
       expandCard: '展开',
-      timeWindowHint: '只重排尝试顺序，不过滤；order 里的 route 先试，其余保持链上的相对顺序。',
+      timeWindowHint: '只重排尝试顺序，不过滤：勾选的路由在本时段先试，未勾选的保持链上的相对顺序。',
       noWindows: '未设置时段，始终按链顺序尝试。',
       windowLabel: '名称',
-      windowOrderHint: 'route 键，按尝试顺序，逗号分隔，例如 deepseek-account/deepseek-flash',
+      windowOrderHint: '本时段优先的路由',
       sticky: '会话粘性',
       stickyHint: '同一会话尽量复用上一次成功的路由，保护提示缓存。',
       stickinessTtl: '粘性 TTL（分钟）',
@@ -252,10 +265,10 @@ window.__ModuleLoader__.load({
       presetDeepSeek: 'DeepSeek peak / off-peak',
       collapseCard: 'Collapse',
       expandCard: 'Expand',
-      timeWindowHint: 'Reorders attempts only, never filters: listed routes go first, the rest keep their relative chain order.',
+      timeWindowHint: 'Reorders attempts only, never filters: checked routes go first in this window, the rest keep their relative chain order.',
       noWindows: 'No windows configured; the chain order always applies.',
       windowLabel: 'Label',
-      windowOrderHint: 'Route keys in attempt order, comma separated, e.g. deepseek-account/deepseek-flash',
+      windowOrderHint: 'Routes to try first in this window',
       sticky: 'Session stickiness',
       stickyHint: 'Reuse the last successful route for a session to protect the prompt cache.',
       stickinessTtl: 'Stickiness TTL (min)',
@@ -637,6 +650,42 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * One titled block inside a card. Sections carry the divider that keeps
+     * identity, chain, time windows and policy readable as parts of a single
+     * card, instead of a stack of unrelated disclosures.
+     */
+    function Section({ t, title, count, actions, open, onToggle, children }) {
+      const collapsible = typeof onToggle === 'function'
+      return h(
+        'div',
+        { className: 'ar-section' },
+        h(
+          'div',
+          { className: collapsible ? 'ar-section-head clickable' : 'ar-section-head', onClick: collapsible ? onToggle : undefined },
+          collapsible
+            ? h(
+                'button',
+                {
+                  className: 'ar-chevron',
+                  type: 'button',
+                  'aria-expanded': open !== false,
+                  'aria-label': open !== false ? t('collapseCard') : t('expandCard'),
+                  onClick: onToggle,
+                },
+                open !== false ? '▾' : '▸',
+              )
+            : null,
+          h('span', { className: 'ar-section-title' }, title),
+          typeof count === 'number' && count > 0 ? h('span', { className: 'ar-badge' }, String(count)) : null,
+          actions === undefined || actions === null
+            ? null
+            : h('span', { className: 'ar-section-actions', onClick: (event) => event.stopPropagation() }, actions),
+        ),
+        open === false ? null : h('div', { className: 'ar-section-body' }, children),
+      )
+    }
+
     function ProfileCard(props) {
       const { profile, index, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
       const policy = profile.policy ?? {}
@@ -684,57 +733,60 @@ window.__ModuleLoader__.load({
           ),
           h(Toggle, { label: t('profileEnabled'), checked: profile.enabled !== false, onChange: (value) => onEdit({ enabled: value }) }),
         ),
-        h('div', { className: 'ar-label' }, t('chain')),
-        h('div', { className: 'ar-hint' }, t('chainHint')),
-        profile.chain.length === 0
-          ? h('div', { className: 'ar-banner err' }, t('emptyChain'))
-          : h(
-              'div',
-              { className: 'ar-chain' },
-              profile.chain.map((entry, entryIndex) =>
-                h(EntryRow, {
-                  key: entry.id ?? `${entry.provider}/${entry.model}/${entryIndex}`,
-                  entry,
-                  index: entryIndex,
-                  count: profile.chain.length,
-                  profileIndex: index,
-                  t,
-                  catalog,
-                  probe: probes[`${profile.id}::${entry.provider}/${entry.model}`],
-                  onProbe: (target) => onProbe(profile, target),
-                  onChange: (patch) => onEdit({ chain: profile.chain.map((item, i) => (i === entryIndex ? { ...item, ...patch } : item)) }),
-                  onMove: (delta) => {
-                    const chain = [...profile.chain]
-                    const [item] = chain.splice(entryIndex, 1)
-                    chain.splice(entryIndex + delta, 0, item)
-                    onEdit({ chain })
-                  },
-                  onRemove: () => onEdit({ chain: profile.chain.filter((_, i) => i !== entryIndex) }),
-                }),
-              ),
-            ),
         h(
-          'div',
-          { className: 'ar-row' },
+          Section,
+          { title: t('chain') },
+          h('div', { className: 'ar-hint' }, t('chainHint')),
+          profile.chain.length === 0
+            ? h('div', { className: 'ar-banner err' }, t('emptyChain'))
+            : h(
+                'div',
+                { className: 'ar-chain' },
+                profile.chain.map((entry, entryIndex) =>
+                  h(EntryRow, {
+                    key: entry.id ?? `${entry.provider}/${entry.model}/${entryIndex}`,
+                    entry,
+                    index: entryIndex,
+                    count: profile.chain.length,
+                    profileIndex: index,
+                    t,
+                    catalog,
+                    probe: probes[`${profile.id}::${entry.provider}/${entry.model}`],
+                    onProbe: (target) => onProbe(profile, target),
+                    onChange: (patch) => onEdit({ chain: profile.chain.map((item, i) => (i === entryIndex ? { ...item, ...patch } : item)) }),
+                    onMove: (delta) => {
+                      const chain = [...profile.chain]
+                      const [item] = chain.splice(entryIndex, 1)
+                      chain.splice(entryIndex + delta, 0, item)
+                      onEdit({ chain })
+                    },
+                    onRemove: () => onEdit({ chain: profile.chain.filter((_, i) => i !== entryIndex) }),
+                  }),
+                ),
+              ),
           h(
-            'select',
-            { className: 'ar-select grow', value: provider, onChange: (event) => setProvider(event.target.value) },
-            catalog.providers.map((item) => h('option', { key: item.id, value: item.id }, item.name || item.id)),
-          ),
-          h(
-            'select',
-            { className: 'ar-select grow', value: model, onChange: (event) => setModel(event.target.value) },
-            models.map((item) => h('option', { key: item.id, value: item.id }, item.name || item.id)),
-          ),
-          h(
-            'button',
-            {
-              className: 'ar-btn',
-              type: 'button',
-              disabled: !provider || !model,
-              onClick: () => onAddRoute(profile.id, { provider, model }),
-            },
-            `+ ${t('addRoute')}`,
+            'div',
+            { className: 'ar-row' },
+            h(
+              'select',
+              { className: 'ar-select grow', value: provider, onChange: (event) => setProvider(event.target.value) },
+              catalog.providers.map((item) => h('option', { key: item.id, value: item.id }, item.name || item.id)),
+            ),
+            h(
+              'select',
+              { className: 'ar-select grow', value: model, onChange: (event) => setModel(event.target.value) },
+              models.map((item) => h('option', { key: item.id, value: item.id }, item.name || item.id)),
+            ),
+            h(
+              'button',
+              {
+                className: 'ar-btn',
+                type: 'button',
+                disabled: !provider || !model,
+                onClick: () => onAddRoute(profile.id, { provider, model }),
+              },
+              `+ ${t('addRoute')}`,
+            ),
           ),
         ),
         h(TimeWindows, {
@@ -743,12 +795,30 @@ window.__ModuleLoader__.load({
           chain: profile.chain ?? [],
           onChange: (list) => setPolicy({ timeWindows: list }),
         }),
-        h(
-          'details',
-          { className: 'ar-details ar-policy' },
-          h('summary', null, t('policy')),
-          h(PolicyFields, { t, policy, onChange: setPolicy }),
-        ),
+        h(PolicySection, { t, policy, onChange: setPolicy }),
+      )
+    }
+
+    /**
+     * Policy belongs to the profile that owns the chain, so it renders inside
+     * that profile's card. A page-level policy card had to carry its own
+     * profile picker and could silently edit a profile the user was not
+     * looking at.
+     */
+    function PolicySection({ t, policy, onChange }) {
+      // Open by default: a collapsed section reads as an empty card, which is
+      // exactly how the time windows looked before they moved in here.
+      const [open, setOpen] = useState(true)
+      return h(
+        Section,
+        {
+          t,
+          title: t('policy'),
+          open,
+          onToggle: () => setOpen((value) => !value),
+          actions: h('span', { className: 'ar-muted' }, t('policyHint')),
+        },
+        h(PolicyFields, { t, policy, onChange }),
       )
     }
 
@@ -947,19 +1017,24 @@ window.__ModuleLoader__.load({
 
     /**
      * Time windows reorder one profile's own chain, so they live inside that
-     * profile's card instead of a card of their own: a window is meaningless
-     * without the routes it reorders, and a page-level card forced the user to
-     * pick a profile twice.
+     * profile's card: a window is meaningless without the routes it reorders.
+     * Which routes go first is picked from the chain itself — typing
+     * `provider/model` keys by hand was neither discoverable nor checkable.
      */
     function TimeWindows({ t, windows, chain, onChange }) {
+      const routes = (chain ?? [])
+        .filter((entry) => entry.enabled !== false && entry.provider && entry.model)
+        .map((entry) => ({ key: `${entry.provider}/${entry.model}`, provider: entry.provider, model: entry.model }))
       const edit = (index, patch) => onChange(windows.map((item, at) => (at === index ? { ...item, ...patch } : item)))
       const add = () =>
         onChange([...windows, { id: `window-${windows.length + 1}`, label: '', from: '00:00', to: '08:30', order: [] }])
       const remove = (index) => onChange(windows.filter((_, at) => at !== index))
+      const toggle = (index, key) => {
+        const current = windows[index].order ?? []
+        edit(index, { order: current.includes(key) ? current.filter((item) => item !== key) : [...current, key] })
+      }
       const preset = () => {
-        const keys = (chain ?? [])
-          .filter((entry) => entry.enabled !== false)
-          .map((entry) => `${entry.provider}/${entry.model}`)
+        const keys = routes.map((route) => route.key)
         const official = keys.filter((key) => key.startsWith('deepseek-account/'))
         const others = keys.filter((key) => !official.includes(key))
         onChange([
@@ -969,22 +1044,27 @@ window.__ModuleLoader__.load({
       }
 
       return h(
-        'details',
-        { className: 'ar-details ar-windows' },
-        h('summary', null, windows.length === 0 ? t('timeWindows') : `${t('timeWindows')} · ${windows.length}`),
-        h(
-          'div',
-          { className: 'ar-row', style: { marginTop: 6 } },
-          h('button', { className: 'ar-btn tiny', type: 'button', onClick: add }, t('addWindow')),
-          h('button', { className: 'ar-btn tiny', type: 'button', onClick: preset }, t('presetDeepSeek')),
-        ),
+        Section,
+        {
+          t,
+          title: t('timeWindows'),
+          count: windows.length,
+          actions: [
+            h('button', { key: 'add', className: 'ar-btn tiny', type: 'button', onClick: add }, `+ ${t('addWindow')}`),
+            h(
+              'button',
+              { key: 'preset', className: 'ar-btn tiny', type: 'button', onClick: preset, disabled: routes.length === 0 },
+              t('presetDeepSeek'),
+            ),
+          ],
+        },
         h('div', { className: 'ar-hint' }, t('timeWindowHint')),
         windows.length === 0
           ? h('div', { className: 'ar-muted' }, t('noWindows'))
           : windows.map((window, index) =>
               h(
                 'div',
-                { key: index, className: 'ar-window' },
+                { key: window.id ?? index, className: 'ar-window' },
                 h(
                   'div',
                   { className: 'ar-row' },
@@ -1009,18 +1089,24 @@ window.__ModuleLoader__.load({
                   }),
                   h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => remove(index) }, '✕'),
                 ),
-                h('input', {
-                  className: 'ar-input wide',
-                  value: (window.order ?? []).join(', '),
-                  placeholder: t('windowOrderHint'),
-                  onChange: (event) =>
-                    edit(index, {
-                      order: event.target.value
-                        .split(',')
-                        .map((item) => item.trim())
-                        .filter((item) => item !== ''),
-                    }),
-                }),
+                h('div', { className: 'ar-label' }, t('windowOrderHint')),
+                h(
+                  'div',
+                  { className: 'ar-chips' },
+                  routes.map((route) => {
+                    const on = (window.order ?? []).includes(route.key)
+                    return h(
+                      'label',
+                      { key: route.key, className: on ? 'ar-chip on' : 'ar-chip', title: route.key },
+                      h('input', {
+                        type: 'checkbox',
+                        checked: on,
+                        onChange: () => toggle(index, route.key),
+                      }),
+                      `${route.provider} · ${route.model}`,
+                    )
+                  }),
+                ),
               ),
             ),
       )
