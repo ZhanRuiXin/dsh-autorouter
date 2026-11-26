@@ -43,6 +43,9 @@ function makeHarness() {
   }
   let lagging = false
   let failing = false
+  let failingProvider = undefined
+  const attempts = []
+  let rejectedEfforts = 0
 
   const settings = {
     describe: () => [{ ns: ENTRY_ID, value: visible, revision: visibleRevision }],
@@ -65,12 +68,32 @@ function makeHarness() {
       const registration = adapters.find((item) => item.providers.includes(options.provider))
       if (registration !== undefined) return registration.adapter.stream(options)
       return (async function* upstream() {
-        if (failing) {
-          yield { type: 'finish', reason: 'error', failure: { message: 'upstream boom', code: 'AUTH' } }
+        // The host validates an explicit effort against the target before any
+        // I/O and throws rather than yielding a finish chunk.
+        const info = await llm.resolveModelInfo(options.provider, options.model)
+        if (options.reasoningEffort !== undefined) {
+          const declared = info.reasoning?.efforts ?? []
+          if (info.reasoning === undefined || !declared.some((effort) => effort.id === options.reasoningEffort)) {
+            rejectedEfforts += 1
+            throw Object.assign(
+              new Error(
+                `provider "${options.provider}" model "${options.model}" does not support reasoning effort "${options.reasoningEffort}"`,
+              ),
+              { code: 'UNSUPPORTED_REASONING_EFFORT' },
+            )
+          }
+        }
+        attempts.push({
+          provider: options.provider,
+          model: options.model,
+          reasoningEffort: options.reasoningEffort,
+        })
+        if (failing || options.provider === failingProvider) {
+          yield { type: 'finish', reason: { kind: 'error', failure: { message: 'upstream boom', code: 'AUTH' } } }
           return
         }
         yield { type: 'text-delta', text: 'ok' }
-        yield { type: 'finish', reason: 'stop', usage: { inputTokens: 3, outputTokens: 1 } }
+        yield { type: 'finish', reason: { kind: 'stop' }, usage: { inputTokens: 3, outputTokens: 1 } }
       })()
     },
     registerAdapter(providers, adapter) {
@@ -87,19 +110,25 @@ function makeHarness() {
         : [{ id: 'deepseek/deepseek-v4.1-flash', name: 'Flash' }]
     },
     async resolveModelInfo(provider, model) {
+      // llm-deepseek declares no reasoning efforts, and that difference is the
+      // whole point of the effort-mapping tests.
       return {
         provider,
         id: model,
         name: model,
         inputModalities: ['text', 'image'],
         context: { contextWindow: 1_000_000 },
-        reasoning: {
-          efforts: [
-            { id: 'low', name: 'Low' },
-            { id: 'max', name: 'Max' },
-          ],
-          defaultEffort: 'low',
-        },
+        ...(provider === 'deepseek-account'
+          ? {}
+          : {
+              reasoning: {
+                efforts: [
+                  { id: 'low', name: 'Low' },
+                  { id: 'max', name: 'Max' },
+                ],
+                defaultEffort: 'low',
+              },
+            }),
         toolUpdate: 'addition-only',
       }
     },
@@ -142,7 +171,13 @@ function makeHarness() {
   return { ctx, provided, routes, adapters, saved, effects, listeners, lag: harness.lag,
     failStream(active) {
       failing = active
-    }, get revision() { return revision } }
+    },
+    failProvider(id) {
+      failingProvider = id
+    },
+    attempts,
+    get rejectedEfforts() { return rejectedEfforts },
+    get revision() { return revision } }
 }
 
 function fakeRes() {
@@ -271,6 +306,52 @@ test('a save answers with the written config even while the host projection lags
   const settled = await call(harness, '/api/autorouter/state')
   assert.equal(settled.body.config.enabled, false)
   assert.equal(settled.body.revision, 4)
+})
+
+test('a fallback onto a model without reasoning keeps the request alive', async () => {
+  const harness = makeHarness()
+  plugin.apply(harness.ctx, {})
+
+  const put = await call(harness, '/api/autorouter/config', {
+    method: 'PUT',
+    body: {
+      revision: harness.revision,
+      value: {
+        enabled: true,
+        profiles: [
+          {
+            id: 'auto',
+            name: 'Auto',
+            chain: [
+              { provider: 'opendesign', model: 'deepseek-v4.1-flash-eco' },
+              { provider: 'deepseek-account', model: 'deepseek-flash' },
+            ],
+            policy: { cooldownMs: 60_000, maxSwitches: 4 },
+          },
+        ],
+      },
+    },
+  })
+  assert.equal(put.status, 200)
+  harness.failProvider('opendesign')
+
+  const chunks = []
+  for await (const chunk of harness.adapters[0].adapter.stream({
+    provider: 'autorouter',
+    model: 'auto',
+    reasoningEffort: 'max',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    sessionId: 'session-1',
+  })) {
+    chunks.push(chunk)
+  }
+
+  assert.equal(chunks.at(-1).reason.kind, 'stop')
+  assert.equal(harness.attempts[0].reasoningEffort, 'max')
+  const fallback = harness.attempts.filter((attempt) => attempt.provider === 'deepseek-account')
+  assert.equal(fallback.length, 1)
+  assert.equal(fallback[0].reasoningEffort, undefined, 'a model that declares no effort must not receive one')
+  assert.equal(harness.rejectedEfforts, 0, 'the router must not rely on the host rejecting the effort')
 })
 
 test('a try request streams through the router and reports the route that served it', async () => {

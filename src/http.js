@@ -300,7 +300,11 @@ export function installRoutes(deps) {
         } catch (error) {
           return json(res, 200, { ok: false, profile, ms: Date.now() - startedAt, error: error.message })
         }
-        const reason = finish?.reason
+        // The host reports a terminal outcome as {kind, failure}; older adapters
+        // used a bare string. Normalise, so a failure never reads as success.
+        const rawReason = finish?.reason
+        const reason = typeof rawReason === 'string' ? rawReason : rawReason?.kind
+        const failure = typeof rawReason === 'object' && rawReason !== null ? rawReason.failure : finish?.failure
         const ok = reason !== undefined && reason !== 'error' && reason !== 'aborted'
         json(res, 200, {
           ok,
@@ -310,7 +314,7 @@ export function installRoutes(deps) {
           reason,
           text: text.slice(0, 400),
           usage: finish?.usage,
-          error: ok ? undefined : finish?.failure?.message,
+          error: ok ? undefined : (failure?.message ?? 'the routed call did not complete'),
         })
       },
     },
