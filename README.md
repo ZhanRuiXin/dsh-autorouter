@@ -43,8 +43,18 @@ DSH 只在插件声明了 `peerDependencies` 时才会把 `@deepseek-ai/*` 解�
 进程会报 `Cannot find package '@deepseek-ai/schemastery'`，插件行停在 `inactive`
 （`cordis_inspect` 的 Config 状态不会是 `schema`）。
 
-装好后（或改了文件后）对插件行触发一次重组即可，不必重启：
-`plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`。
+设置页需要有可写的 profile 行。bundle 自带的 patch 只会插出一条 `include:` 行，
+它不产生 `settings.describe()` 里的 section，保存会报 `no profile entry`。在
+`cordis.patch.yml` 里补一条同名行（会覆盖 bundle 的默认 config）即可：
+
+```yaml
+- id: llm-autorouter
+  name: dsh-autorouter
+  config: {}
+```
+
+装好后（或改了文件后）对插件行触发一次重组即可：`plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`。
+这只重组 bundle 行；宿主机 JS 的改动仍要重启进程才会生效，client bundle 刷新页面即可。
 重启 DSH 后：
 
 1. 设置 → **AutoRouter** 出现设置页；
