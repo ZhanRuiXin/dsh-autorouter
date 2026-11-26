@@ -14,6 +14,7 @@
 import { entryKey } from '../config.js'
 import { classifyFailure, failureOf } from './classify.js'
 import { mapEffort } from './effort.js'
+import { attemptIdleFailure, createIdleGuard } from './idle.js'
 import { orderCandidates, usability } from './select.js'
 
 const OUTPUT_CHUNKS = new Set(['block-start', 'text-delta', 'reasoning-delta', 'tool-call-delta'])
@@ -179,14 +180,40 @@ export async function* walkRoute(input) {
       attemptOptions.reasoningEffort = mapping.effort
     }
 
+    // A stream that accepts the request and then goes quiet never reports a
+    // failure, so each attempt carries its own silence detector on top of the
+    // host signal. With `attemptIdleMs` at 0 the guard stays off.
+    const guard = createIdleGuard({ idleMs: policy.attemptIdleMs, parentSignal: options.signal })
+    if (guard !== undefined) attemptOptions.signal = guard.signal
+
     state.noteAttempt(key)
     let committed = false
     let pendingUsage = []
     let swallowed
     let retrySameTarget = false
 
+    // Output already reached the caller, so this attempt cannot be replayed.
+    // The route is still why the step died: book it so the next step does not
+    // start there, and forward the failure untouched.
+    const bookAfterCommit = (failure) => {
+      const verdict = classifyFailure(failure, policy, { alreadyCommitted: false })
+      const streak = state.recordFailure(key, now(), policy.failureWindowMs)
+      if (verdict.retryable) {
+        state.suppress(key, cooldownFor(policy, entry, streak, verdict, random), now(), {
+          code: verdict.code,
+          status: verdict.status,
+          message: verdict.reason,
+        })
+      }
+      state.setLastError({ key, code: verdict.code, status: verdict.status, message: verdict.reason, at: now() })
+      const pin = state.session(sessionId, now(), policy.stickinessTtlMs)
+      if (pin?.key === key) state.unpin(sessionId)
+    }
+
     try {
       for await (const chunk of streamFn(attemptOptions)) {
+        guard?.touch()
+
         if (chunk.type === 'usage') {
           if (committed) yield chunk
           else pendingUsage.push(chunk)
@@ -194,7 +221,14 @@ export async function* walkRoute(input) {
         }
 
         if (chunk.type === 'finish') {
-          const failure = chunk.reason?.kind === 'error' ? chunk.reason.failure : undefined
+          // The guard knows the attempt went silent even when the adapter only
+          // reports the abort it received, so a silence verdict wins.
+          const silent = guard?.timedOut() === true
+          const failure = silent
+            ? attemptIdleFailure(policy.attemptIdleMs)
+            : chunk.reason?.kind === 'error'
+              ? chunk.reason.failure
+              : undefined
           if (failure !== undefined && !committed) {
             // One parameter repair per attempt: the upstream may simply not
             // know this effort, which is not a reason to abandon the route.
@@ -222,11 +256,13 @@ export async function* walkRoute(input) {
               state.recordSuccess(key, now())
               if (policy.sticky === true) state.pin(sessionId, profile.id, key, now())
             }
+          } else if (committed) {
+            bookAfterCommit(failure)
           } else {
             state.recordFailure(key, now(), policy.failureWindowMs)
             state.setLastError({ key, code: failure.code, status: failure.status, message: failure.message, at: now() })
           }
-          yield chunk
+          yield silent ? failureChunk(failure) : chunk
           return
         }
 
@@ -238,7 +274,22 @@ export async function* walkRoute(input) {
     } catch (error) {
       // A thrown error is a broken contract or a consumer failure, not a route
       // verdict. Only the walk's own pre-attempt errors are converted.
-      if (!committed) {
+      if (guard?.timedOut() === true) {
+        // The adapter surfaced the abort the guard raised; the reason is
+        // silence, not whatever the abort surfaced as.
+        const failure = attemptIdleFailure(policy.attemptIdleMs)
+        if (committed) {
+          bookAfterCommit(failure)
+          yield failureChunk(failure)
+          return
+        }
+        const verdict = classifyFailure(failure, policy, { alreadyCommitted: false })
+        if (!verdict.retryable) {
+          yield failureChunk(failure)
+          return
+        }
+        swallowed = { chunk: failureChunk(failure), verdict }
+      } else if (!committed) {
         const failure = failureOf(error)
         // The host rejects an effort the target does not declare before any
         // I/O, and it throws instead of yielding a finish chunk. That is the
@@ -260,6 +311,8 @@ export async function* walkRoute(input) {
       } else {
         throw error
       }
+    } finally {
+      guard?.dispose()
     }
 
     if (retrySameTarget) continue

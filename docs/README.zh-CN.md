@@ -105,6 +105,10 @@ AutoRouter / auto
 
 适配器一旦产出 `block-start`、文本、思考或工具调用增量，这次尝试就算提交。提交之前，带触发码（`AUTH`、`QUOTA`、`RATE_LIMIT`、`NETWORK` 以及触发列表里的状态码）的终态失败会切到下一条。提交之后，失败按上游原样转发：半截的回答绝不会在另一个 provider 上悄悄重来。
 
+这条规则管的是**一次尝试**，不是整段对话。一步就是一次 `llm.stream()`，每一步都会重新选路，所以中途挂掉的供应商只损失一步：失败照常记账，路由进冷却、会话解除钉住，下一步换一条路开始，而不是先去重试那条已经死掉的路。
+
+连上了却一直不说的话，由同一套机制兜底：把 `attemptIdleMs` 设成非 0 后，尝试若在这段时间里一个 chunk 都没收到就会被中止，按 `NETWORK` 处理——还没产出内容就换下一条，已经产出内容就报错并记账。
+
 失败会被记账并进入冷却（`cooldownMs`，默认 5 分钟，可加抖动）。`honorRetryAfter` 打开时尊重上游的 `Retry-After`；`failureWindowMs` 内反复失败会按 `backoffMaxMs` 封顶指数退避。冷却中的路由是被跳过而不是被删除，会自己回来；**实时状态** 页列出每一条，并能单独清掉。
 
 `maxSwitches` 是保险丝而不是目标：一步之内切换到这个数就停下，报最后一次失败，而不是无限循环。
@@ -176,6 +180,7 @@ deepseek-offpeak   00:30–08:30、22:00–23:30   先走 deepseek-account/*，�
 | `policy.sticky` / `stickinessTtlMs` | 配置 | 会话粘性与钉住的有效期，过期后重新选路 |
 | `policy.triggerCodes` / `triggerStatuses` | 配置 | 什么算「切下一条」；其余原样转发 |
 | `policy.honorRetryAfter` / `retryOnNetwork` | 配置 | 上游 `Retry-After`，以及传输失败是否可重试 |
+| `policy.attemptIdleMs` | 配置 | 尝试静默超过这么久就中止并按 `NETWORK` 处理；`0`（默认）表示等宿主自己超时 |
 | `policy.effortPolicy` / `contextPolicy` | 配置 | `clamp` / `drop` / `fail`；对外公布窗口取 `min` / `max` |
 | `policy.timeWindows[]` | 配置 | `{ id, label, ranges[], utcOffsetMinutes, order[] }`；`order` 是该时段的完整链 |
 | `/api/autorouter/*` | 宿主 | 页面用的同源 HTTP 面；在 DSH 已有端口上 `auth: 'required'` |

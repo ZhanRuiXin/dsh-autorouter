@@ -65,9 +65,11 @@ export function classifyFailure(failure, policy, { alreadyCommitted = false } = 
 
   let retryable = ROUTE_DEAD_CODES.has(code) || triggerCodes.includes(code)
   if (!retryable && status !== undefined && triggerStatuses.includes(status)) retryable = true
-  if (!retryable && policy.retryOnNetwork !== false && NETWORK_PATTERN.test(message)) {
+  // `NETWORK` is the code the idle guard raises for a stream that accepted the
+  // request and then went quiet; it is a network condition like any other.
+  if (!retryable && policy.retryOnNetwork !== false && (rawCode === 'NETWORK' || NETWORK_PATTERN.test(message))) {
     retryable = true
-    code = 'NETWORK_ERROR'
+    if (code !== 'NETWORK') code = 'NETWORK_ERROR'
   }
   if (alreadyCommitted) retryable = false
 

@@ -105,6 +105,10 @@ Candidate selection is `chain order → usability → active time window → sti
 
 An attempt is committed the moment the adapter yields `block-start`, text, reasoning or a tool-call delta. Before that, a terminal failure with a trigger code (`AUTH`, `QUOTA`, `RATE_LIMIT`, `NETWORK`, and the HTTP statuses in the trigger list) moves to the next route. After it, the failure is forwarded exactly as the upstream reported it: a half-streamed answer is never silently restarted on another provider.
 
+That rule is about the *attempt*, not the conversation. A step is one `llm.stream()` call and every step re-selects its route, so a provider that dies mid-answer costs one step: the failure is still booked, the route is put in cooldown and the session loses its pin, and the next step starts somewhere else instead of retrying the dead route first.
+
+A provider that accepts the connection and then stops sending is handled by the same machinery: with `attemptIdleMs` set (0 = off), an attempt that receives nothing for that long is aborted, classified as `NETWORK`, and either handed to the next route (nothing emitted yet) or reported as an error and booked (output already emitted).
+
 A route that fails is booked and cools down (`cooldownMs`, `5` minutes by default, with optional jitter). Retry-After from the upstream is honoured when `honorRetryAfter` is on. Repeated failures inside `failureWindowMs` back off exponentially up to `backoffMaxMs`. A cooling route is skipped, not removed, and comes back on its own; the **live status** tab lists each one and can clear a single cooldown.
 
 `maxSwitches` is a fuse, not a target: the walk stops after that many switches in one step and reports the last failure instead of looping.
@@ -176,6 +180,7 @@ The configuration lives in the profile patch row that the bundle inserts, and th
 | `policy.sticky` / `stickinessTtlMs` | config | Session stickiness and how long a pin survives before the route is re-chosen |
 | `policy.triggerCodes` / `triggerStatuses` | config | What counts as "switch to the next route"; anything else is forwarded |
 | `policy.honorRetryAfter` / `retryOnNetwork` | config | Upstream `Retry-After`, and whether transport failures are retryable |
+| `policy.attemptIdleMs` | config | Abort an attempt that sends nothing for this long and treat it as `NETWORK`; `0` (default) waits for the host |
 | `policy.effortPolicy` / `contextPolicy` | config | `clamp` / `drop` / `fail`; `min` / `max` for the advertised context window |
 | `policy.timeWindows[]` | config | `{ id, label, ranges[], utcOffsetMinutes, order[] }`; `order` is the window's full chain |
 | `/api/autorouter/*` | host | Same-origin HTTP surface used by the page; `auth: 'required'` on the existing DSH port |

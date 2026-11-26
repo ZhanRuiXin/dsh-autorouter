@@ -176,6 +176,7 @@ window.__ModuleLoader__.load({
       recoveryTimer: '定时半开',
       recoveryNever: '永不恢复',
       failureWindow: '失败窗口（分钟）',
+  attemptIdle: '空闲超时（秒，0 关闭）',
       failureThreshold: '失败阈值',
       backoff: '退避基数（毫秒）',
       backoffMax: '退避上限（毫秒）',
@@ -303,6 +304,7 @@ window.__ModuleLoader__.load({
       recoveryTimer: 'Half-open on timer',
       recoveryNever: 'Never',
       failureWindow: 'Failure window (min)',
+  attemptIdle: 'Idle timeout (s, 0 = off)',
       failureThreshold: 'Failure threshold',
       backoff: 'Backoff base (ms)',
       backoffMax: 'Backoff cap (ms)',
@@ -1092,6 +1094,17 @@ window.__ModuleLoader__.load({
               min: 0,
               value: Math.round((value.failureWindowMs ?? 120000) / 60000),
               onChange: (event) => set({ failureWindowMs: Math.max(0, Math.round(num(event.target.value, 2) * 60000)) }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('attemptIdle') },
+            h('input', {
+              className: 'ar-input num',
+              type: 'number',
+              min: 0,
+              value: Math.round((value.attemptIdleMs ?? 0) / 1000),
+              onChange: (event) => set({ attemptIdleMs: Math.max(0, Math.round(num(event.target.value, 0))) * 1000 }),
             }),
           ),
           h(

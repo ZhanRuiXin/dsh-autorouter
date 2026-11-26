@@ -4,6 +4,20 @@ Notable changes to `dsh-autorouter`. The shape follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses semantic versioning.
 Every version below was a working bundle: the suite passes on each tagged commit.
 
+## 0.4.0
+
+- a failure that arrives **after** output was committed now cools its route, clears the session pin
+  and records the last error. The attempt is still never replayed — the caller keeps the half
+  answer it already saw — but the next step starts on another route instead of retrying the one
+  that just died. Before this, a provider that broke mid-answer cost one failed step per turn until
+  its own cooldown from an earlier connect failure expired.
+- new `policy.attemptIdleMs` (default `0`, off): an attempt that receives no chunk for that long is
+  aborted through a child `AbortController` and classified as `NETWORK`, so a provider that accepts
+  the connection and then goes quiet is handled like any other failure instead of hanging until the
+  host gives up. Before output it hands the step to the next route; after output it reports the
+  failure and books the route. The host's own abort is relayed but never blamed on the route, and
+  the setting is exposed as **Idle timeout (s)** in the policy section.
+
 ## 0.3.0
 
 - a profile can be copied from its card head: the copy keeps the whole configuration (chain, its
