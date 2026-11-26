@@ -617,7 +617,7 @@ window.__ModuleLoader__.load({
     }
 
     function ProfileCard(props) {
-      const { profile, index, selected, t, catalog, onSelect, onEdit, onRemove, onAddRoute, probes, onProbe } = props
+      const { profile, index, selected, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
       const [provider, setProvider] = useState(catalog.providers[0]?.id ?? '')
       const [model, setModel] = useState(catalog.providers[0]?.models[0]?.id ?? '')
       const models = catalog.providers.find((item) => item.id === provider)?.models ?? []
@@ -636,14 +636,6 @@ window.__ModuleLoader__.load({
           onToggle: props.onToggle,
           style: selected ? { borderColor: 'rgba(59,130,246,.55)' } : undefined,
           head: [
-            h('input', {
-              key: 'select',
-              type: 'radio',
-              name: 'autorouter-profile',
-              checked: selected,
-              onChange: () => onSelect(profile.id),
-              title: t('profile'),
-            }),
             h('span', { key: 'title', className: 'ar-card-title' }, profile.name || profile.id),
             h('span', { key: 'id', className: 'ar-badge' }, profile.id),
             !profile.enabled ? h('span', { key: 'off', className: 'ar-badge warn' }, t('profileDisabled')) : null,
@@ -1107,7 +1099,6 @@ window.__ModuleLoader__.load({
                   catalog,
                   probes,
                   onProbe: probe,
-                  onSelect: setSelected,
                   onEdit: (patch) => editProfile(index, patch),
                   onRemove: removeProfile,
                   onAddRoute: addRoute,

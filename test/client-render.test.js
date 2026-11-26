@@ -404,6 +404,12 @@ test('the routes tab renders one card per profile plus the status card', () => {
   const entryRows = findAll(tree, hasClassList(['ar-entry']))
   assert.equal(entryRows.length, 2)
   assert.ok(text(tree).includes('opendesign'), 'the chain renders its providers')
+
+  // The profile card head is text only: selection lives in the policy and
+  // time-window pills, so a bare radio here would be a control with no label.
+  assert.equal(findAll(tree, (node) => node.props?.type === 'radio').length, 0, 'no unlabelled selector dot')
+  const profileCard = findAll(tree, hasClassList(['ar-card']))[0]
+  assert.ok(profileCard.props.style?.borderColor, 'the selected profile is marked by its border')
 })
 
 test('collapsed cards keep their head and drop the body', () => {
