@@ -565,10 +565,20 @@ dsh-autorouter/
 
 ### 11.2 安装（本地 bundle）
 
-1. 把仓库装进 profile（`plugin_manager install_bundle` 指向本地目录，或 profile `package.json` 用 `file:` 依赖）。
-2. bundle patch 追加一行 `llm-autorouter`；profile 的 `cordis.patch.yml` 覆盖默认 config。
-3. 重启 DSH（第三方 client 半没有 HMR）。
-4. 设置 → AutoRouter 出现；模型选择器出现 `AutoRouter / auto`。
+1. 把仓库装进 profile：`package.json` 的 `dependencies` 用 `link:<repo>`，并把
+   `dsh-autorouter` 追加进 `dsh.profile.bundles`；`node_modules` 里要有指向仓库的
+   junction（本次实测：`C:\Users\ADMIN\.dsh\profiles\desktop\node_modules\dsh-autorouter`）。
+2. 插件的 `package.json` 必须声明它导入的 `@deepseek-ai/*` 包为 `peerDependencies`
+   （本包为 `@deepseek-ai/dsh-llm` 与 `@deepseek-ai/schemastery`）。linked bundle
+   的导入解析只认 peer：漏声明时进程报
+   `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery'`，
+   插件行停在 `inactive`。
+3. 对插件行触发一次重组即可生效，不必重启：
+   `plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`。
+   改动 `client.js` 后仍需重启（第三方 client 半没有 HMR）。
+4. 验证：`cordis_inspect` 的 Config 状态应为 `schema`（不是 `inactive`），client
+   `Slots.listSubTree` 的 `settings.section` 下出现 `autorouter`/16；设置 →
+   AutoRouter 出现，模型选择器出现 `AutoRouter / auto`。
 5. 把 `agent-default-model` 的 `provider/model` 改为 `autorouter` / `auto`（或某个 profile）。
 
 ### 11.3 从 fallbacks 迁移
