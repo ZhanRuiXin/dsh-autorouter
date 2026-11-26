@@ -238,6 +238,18 @@ test('a time window reorders the chain', () => {
   assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
 })
 
+test('a time window carries a whole fallback chain, not just a hint', () => {
+  const state = new RouterState({ now: () => NOW })
+  const profile = selectFixture()
+  profile.chain.push({ id: 'c/p', enabled: true, provider: 'c', model: 'p', cooldownMs: 300000, effortMap: {} })
+  profile.policy.timeWindows = [
+    { id: 'w', label: 'w', from: 0, to: 1439, utcOffsetMinutes: 480, order: ['c/p', 'b/n'] },
+  ]
+  // A full permutation: the window decides the entire order, and a route it
+  // leaves out still runs last instead of disappearing.
+  assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['c/p', 'b/n', 'a/m'])
+})
+
 test('matchSettingsEntry resolves the plain and the include-prefixed profile row', () => {
   const plain = [{ ns: 'ui-settings-account' }, { ns: 'llm-autorouter', revision: 4 }]
   assert.equal(matchSettingsEntry(plain)?.revision, 4)

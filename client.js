@@ -92,11 +92,8 @@ window.__ModuleLoader__.load({
 .ar-section-title{font-size:12px;font-weight:600;letter-spacing:.01em}
 .ar-section-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
 .ar-section-body{display:flex;flex-direction:column;gap:8px}
-.ar-chips{display:flex;flex-wrap:wrap;gap:6px}
-.ar-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;border:1px solid rgba(128,128,128,.30);font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap}
-.ar-chip:hover{border-color:rgba(128,128,128,.55)}
-.ar-chip.on{border-color:rgba(59,130,246,.65);background:rgba(59,130,246,.14)}
-.ar-chip input{margin:0;padding:0;accent-color:#3b82f6}
+.ar-order-tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ar-order-preview{font-size:11.5px;line-height:1.5;word-break:break-word}
 `
 
     const ZH = {
@@ -154,10 +151,14 @@ window.__ModuleLoader__.load({
       presetDeepSeek: 'DeepSeek 峰谷',
       collapseCard: '收起',
       expandCard: '展开',
-      timeWindowHint: '只重排尝试顺序，不过滤：勾选的路由在本时段先试，未勾选的保持链上的相对顺序。',
+      timeWindowHint: '每个时段有自己的回退链：在「回退链」里切到该时段，用上下箭头调整顺序。',
       noWindows: '未设置时段，始终按链顺序尝试。',
       windowLabel: '名称',
-      windowOrderHint: '本时段优先的路由',
+      windowOrderHint: '本时段的回退顺序',
+      defaultOrder: '默认顺序',
+      orderTabHint: '正在编辑该时段的回退顺序：上下箭头只改这个时段，未列出的路由仍然排在最后兜底。',
+      orderEditHint: '在「回退链」上方的时段按钮里调整顺序。',
+      noRoutes: '尚未添加路由',
       sticky: '会话粘性',
       stickyHint: '同一会话尽量复用上一次成功的路由，保护提示缓存。',
       stickinessTtl: '粘性 TTL（分钟）',
@@ -265,10 +266,14 @@ window.__ModuleLoader__.load({
       presetDeepSeek: 'DeepSeek peak / off-peak',
       collapseCard: 'Collapse',
       expandCard: 'Expand',
-      timeWindowHint: 'Reorders attempts only, never filters: checked routes go first in this window, the rest keep their relative chain order.',
+      timeWindowHint: 'Each window has its own fallback chain: switch to it in the chain tabs and reorder with the arrows.',
       noWindows: 'No windows configured; the chain order always applies.',
       windowLabel: 'Label',
-      windowOrderHint: 'Routes to try first in this window',
+      windowOrderHint: 'Fallback order in this window',
+      defaultOrder: 'Default order',
+      orderTabHint: 'Editing this window’s own fallback order: the arrows change this window only, and routes it omits still run last.',
+      orderEditHint: 'Reorder it from the window buttons above the chain.',
+      noRoutes: 'No routes yet',
       sticky: 'Session stickiness',
       stickyHint: 'Reuse the last successful route for a session to protect the prompt cache.',
       stickinessTtl: 'Stickiness TTL (min)',
@@ -330,6 +335,46 @@ window.__ModuleLoader__.load({
       if (typeof value !== 'number' || !Number.isFinite(value)) return ''
       const total = ((Math.round(value) % 1440) + 1440) % 1440
       return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+    }
+
+    /** `HH:MM` or minutes → minutes, so window edges compare as numbers. */
+    function clockToMinutes(value) {
+      if (typeof value === 'number' && Number.isFinite(value)) return ((Math.round(value) % 1440) + 1440) % 1440
+      if (typeof value !== 'string') return 0
+      const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+      if (match === null) return 0
+      return (Number(match[1]) * 60 + Number(match[2])) % 1440
+    }
+
+    /** Same rule as the host: `from === to` means all day, wrap-around included. */
+    function windowMatches(window, utcOffsetMinutes) {
+      const shifted = new Date(Date.now() + (utcOffsetMinutes ?? 480) * 60_000)
+      const minutes = shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
+      const from = clockToMinutes(window.from)
+      const to = clockToMinutes(window.to)
+      if (from === to) return true
+      return from < to ? minutes >= from && minutes < to : minutes >= from || minutes < to
+    }
+
+    /**
+     * A window's order is a complete chain: keys it lists come first in that
+     * order, routes it does not list keep their configured order behind them.
+     * Same rule the host applies, so the page shows what the host will do.
+     */
+    function orderByKeys(chain, order) {
+      const rank = new Map((order ?? []).map((key, index) => [key, index]))
+      const rankOf = (entry) => {
+        const key = `${entry.provider}/${entry.model}`
+        return rank.has(key) ? rank.get(key) : rank.has(entry.id) ? rank.get(entry.id) : undefined
+      }
+      return [...chain].sort((left, right) => {
+        const leftRank = rankOf(left)
+        const rightRank = rankOf(right)
+        if (leftRank !== undefined && rightRank !== undefined) return leftRank - rightRank
+        if (leftRank !== undefined) return -1
+        if (rightRank !== undefined) return 1
+        return 0
+      })
     }
 
     const S = {
@@ -689,7 +734,12 @@ window.__ModuleLoader__.load({
     function ProfileCard(props) {
       const { profile, index, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
       const policy = profile.policy ?? {}
+      const windows = policy.timeWindows ?? []
+      const chain = profile.chain ?? []
       const setPolicy = (patch) => onEdit({ policy: { ...policy, ...patch } })
+      // Which chain is on screen: the configured one, or one window's own
+      // fallback order over the same routes.
+      const [orderTab, setOrderTab] = useState('default')
       const [provider, setProvider] = useState(catalog.providers[0]?.id ?? '')
       const [model, setModel] = useState(catalog.providers[0]?.models[0]?.id ?? '')
       const models = catalog.providers.find((item) => item.id === provider)?.models ?? []
@@ -700,6 +750,71 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (models.length > 0 && !models.some((item) => item.id === model)) setModel(models[0].id)
       }, [provider, catalog])
+
+      // A deleted window must not leave the editor on a tab that no longer exists.
+      const tab = orderTab !== 'default' && windows.some((window) => window.id === orderTab) ? orderTab : 'default'
+      const current = tab === 'default' ? undefined : windows.find((window) => window.id === tab)
+      const orderedChain = current === undefined ? chain : orderByKeys(chain, current.order)
+      const keyOf = (entry) => `${entry.provider}/${entry.model}`
+      const writeOrder = (order) =>
+        setPolicy({ timeWindows: windows.map((window) => (window.id === current.id ? { ...window, order } : window)) })
+
+      function changeEntry(entry, patch) {
+        const before = keyOf(entry)
+        const next = { ...entry, ...patch }
+        const after = keyOf(next)
+        const nextChain = chain.map((item) => (item === entry ? next : item))
+        if (before === after) {
+          onEdit({ chain: nextChain })
+          return
+        }
+        // A renamed route must not linger in a window order under its old key.
+        onEdit({
+          chain: nextChain,
+          policy: {
+            ...policy,
+            timeWindows: windows.map((window) => ({
+              ...window,
+              order: (window.order ?? []).map((key) => (key === before ? after : key)),
+            })),
+          },
+        })
+      }
+
+      function moveEntry(entry, delta) {
+        if (current === undefined) {
+          const at = chain.indexOf(entry)
+          const to = at + delta
+          if (at < 0 || to < 0 || to >= chain.length) return
+          const next = [...chain]
+          const [item] = next.splice(at, 1)
+          next.splice(to, 0, item)
+          onEdit({ chain: next })
+          return
+        }
+        // Moving inside a window rewrites that window's whole order, because a
+        // window is a chain of its own rather than a "try these two first" hint.
+        const keys = orderedChain.map(keyOf)
+        const at = keys.indexOf(keyOf(entry))
+        const to = at + delta
+        if (at < 0 || to < 0 || to >= keys.length) return
+        const next = [...keys]
+        const [item] = next.splice(at, 1)
+        next.splice(to, 0, item)
+        writeOrder(next)
+      }
+
+      function removeEntry(entry) {
+        const key = keyOf(entry)
+        onEdit({
+          chain: chain.filter((item) => item !== entry),
+          policy: {
+            ...policy,
+            timeWindows: windows.map((window) => ({ ...window, order: (window.order ?? []).filter((item) => item !== key) })),
+          },
+        })
+      }
+
       return h(
         Card,
         {
@@ -737,30 +852,57 @@ window.__ModuleLoader__.load({
           Section,
           { title: t('chain') },
           h('div', { className: 'ar-hint' }, t('chainHint')),
-          profile.chain.length === 0
+          h(
+            'div',
+            { className: 'ar-order-tabs' },
+            h(
+              'button',
+              {
+                key: 'default',
+                type: 'button',
+                className: tab === 'default' ? 'ar-btn tiny primary' : 'ar-btn tiny',
+                onClick: () => setOrderTab('default'),
+              },
+              t('defaultOrder'),
+            ),
+            windows.map((window, at) => {
+              const label = window.label || `${minutesToClock(window.from)}–${minutesToClock(window.to)}`
+              const range = `${minutesToClock(window.from)} → ${minutesToClock(window.to)}`
+              return h(
+                'button',
+                {
+                  key: window.id ?? at,
+                  type: 'button',
+                  className: tab === window.id ? 'ar-btn tiny primary' : 'ar-btn tiny',
+                  title: range,
+                  onClick: () => setOrderTab(window.id),
+                },
+                windowMatches(window, policy.utcOffsetMinutes) ? `● ${label}` : label,
+              )
+            }),
+          ),
+          current === undefined
+            ? null
+            : h('div', { className: 'ar-hint' }, t('orderTabHint')),
+          chain.length === 0
             ? h('div', { className: 'ar-banner err' }, t('emptyChain'))
             : h(
                 'div',
                 { className: 'ar-chain' },
-                profile.chain.map((entry, entryIndex) =>
+                orderedChain.map((entry, entryIndex) =>
                   h(EntryRow, {
                     key: entry.id ?? `${entry.provider}/${entry.model}/${entryIndex}`,
                     entry,
                     index: entryIndex,
-                    count: profile.chain.length,
+                    count: orderedChain.length,
                     profileIndex: index,
                     t,
                     catalog,
                     probe: probes[`${profile.id}::${entry.provider}/${entry.model}`],
                     onProbe: (target) => onProbe(profile, target),
-                    onChange: (patch) => onEdit({ chain: profile.chain.map((item, i) => (i === entryIndex ? { ...item, ...patch } : item)) }),
-                    onMove: (delta) => {
-                      const chain = [...profile.chain]
-                      const [item] = chain.splice(entryIndex, 1)
-                      chain.splice(entryIndex + delta, 0, item)
-                      onEdit({ chain })
-                    },
-                    onRemove: () => onEdit({ chain: profile.chain.filter((_, i) => i !== entryIndex) }),
+                    onChange: (patch) => changeEntry(entry, patch),
+                    onMove: (delta) => moveEntry(entry, delta),
+                    onRemove: () => removeEntry(entry),
                   }),
                 ),
               ),
@@ -791,8 +933,8 @@ window.__ModuleLoader__.load({
         ),
         h(TimeWindows, {
           t,
-          windows: policy.timeWindows ?? [],
-          chain: profile.chain ?? [],
+          windows,
+          chain,
           onChange: (list) => setPolicy({ timeWindows: list }),
         }),
         h(PolicySection, { t, policy, onChange: setPolicy }),
@@ -1024,19 +1166,20 @@ window.__ModuleLoader__.load({
     function TimeWindows({ t, windows, chain, onChange }) {
       const routes = (chain ?? [])
         .filter((entry) => entry.enabled !== false && entry.provider && entry.model)
-        .map((entry) => ({ key: `${entry.provider}/${entry.model}`, provider: entry.provider, model: entry.model }))
-      const edit = (index, patch) => onChange(windows.map((item, at) => (at === index ? { ...item, ...patch } : item)))
-      const add = () =>
-        onChange([...windows, { id: `window-${windows.length + 1}`, label: '', from: '00:00', to: '08:30', order: [] }])
-      const remove = (index) => onChange(windows.filter((_, at) => at !== index))
-      const toggle = (index, key) => {
-        const current = windows[index].order ?? []
-        edit(index, { order: current.includes(key) ? current.filter((item) => item !== key) : [...current, key] })
+        .map((entry) => `${entry.provider}/${entry.model}`)
+      const labelOf = (key) => {
+        const entry = (chain ?? []).find((item) => `${item.provider}/${item.model}` === key)
+        return entry === undefined || entry === null ? key : `${entry.provider}/${entry.model}`
       }
+      const edit = (index, patch) => onChange(windows.map((item, at) => (at === index ? { ...item, ...patch } : item)))
+      // A new window starts as a copy of the configured chain, so it is a
+      // complete fallback chain from the first moment and can be reordered.
+      const add = () =>
+        onChange([...windows, { id: `window-${windows.length + 1}`, label: '', from: '00:00', to: '08:30', order: [...routes] }])
+      const remove = (index) => onChange(windows.filter((_, at) => at !== index))
       const preset = () => {
-        const keys = routes.map((route) => route.key)
-        const official = keys.filter((key) => key.startsWith('deepseek-account/'))
-        const others = keys.filter((key) => !official.includes(key))
+        const official = routes.filter((key) => key.startsWith('deepseek-account/'))
+        const others = routes.filter((key) => !official.includes(key))
         onChange([
           { id: 'deepseek-offpeak', label: 'DeepSeek 低谷', from: '00:30', to: '08:30', order: [...official, ...others] },
           { id: 'deepseek-peak', label: 'DeepSeek 标准', from: '08:30', to: '00:30', order: [...others, ...official] },
@@ -1061,8 +1204,9 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ar-hint' }, t('timeWindowHint')),
         windows.length === 0
           ? h('div', { className: 'ar-muted' }, t('noWindows'))
-          : windows.map((window, index) =>
-              h(
+          : windows.map((window, index) => {
+              const ordered = orderByKeys(chain ?? [], window.order)
+              return h(
                 'div',
                 { key: window.id ?? index, className: 'ar-window' },
                 h(
@@ -1089,26 +1233,17 @@ window.__ModuleLoader__.load({
                   }),
                   h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => remove(index) }, '✕'),
                 ),
+                // Read-only here on purpose: the order is edited on the chain
+                // itself, in the tab this window owns.
                 h('div', { className: 'ar-label' }, t('windowOrderHint')),
                 h(
                   'div',
-                  { className: 'ar-chips' },
-                  routes.map((route) => {
-                    const on = (window.order ?? []).includes(route.key)
-                    return h(
-                      'label',
-                      { key: route.key, className: on ? 'ar-chip on' : 'ar-chip', title: route.key },
-                      h('input', {
-                        type: 'checkbox',
-                        checked: on,
-                        onChange: () => toggle(index, route.key),
-                      }),
-                      `${route.provider} · ${route.model}`,
-                    )
-                  }),
+                  { className: 'ar-muted ar-order-preview' },
+                  ordered.length === 0 ? t('noRoutes') : ordered.map((entry) => labelOf(`${entry.provider}/${entry.model}`)).join('  →  '),
                 ),
-              ),
-            ),
+                h('div', { className: 'ar-hint' }, t('orderEditHint')),
+              )
+            }),
       )
     }
 
@@ -1319,14 +1454,19 @@ window.__ModuleLoader__.load({
       function addRoute(profileId, { provider, model }) {
         editDraft((next) => {
           const target = next.profiles.find((item) => item.id === profileId)
+          const key = `${provider}/${model}`
           target.chain.push({
-            id: `${provider}/${model}`,
+            id: key,
             enabled: true,
             provider,
             model,
             cooldownMs: 300000,
             effortMap: {},
           })
+          // Every window keeps a complete order, so a new route has to land in
+          // each of them too — otherwise it would only ever run as a leftover.
+          const windows = target.policy?.timeWindows ?? []
+          for (const window of windows) window.order = [...(window.order ?? []), key]
         })
       }
 

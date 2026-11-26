@@ -138,6 +138,11 @@ function makeReact() {
   let scenario = []
   let slot = 0
   let active = false
+  // Child components render inside their own hook scope: nothing is asserted
+  // there, but a test may pin one child's initial state (the chain editor opens
+  // on the "default" tab otherwise, so a window tab would never render).
+  const childStack = []
+  const overrides = {}
 
   const useState = (initial) => {
     if (active) {
@@ -150,6 +155,13 @@ function makeReact() {
       }
       slot += 1
       return [spec.value, () => {}]
+    }
+    const scope = childStack[childStack.length - 1]
+    if (scope !== undefined) {
+      const index = scope.slot
+      scope.slot += 1
+      const pinned = overrides[scope.name]
+      if (Array.isArray(pinned) && index < pinned.length) return [pinned[index], () => {}]
     }
     return [typeof initial === 'function' ? initial() : initial, () => {}]
   }
@@ -168,6 +180,15 @@ function makeReact() {
     end() {
       active = false
       assert.equal(slot, scenario.length, 'the scenario must cover every useState of the settings page')
+    },
+    beginChild(name) {
+      childStack.push({ name, slot: 0 })
+    },
+    endChild() {
+      childStack.pop()
+    },
+    override(name, values) {
+      overrides[name] = values
     },
   }
 }
@@ -287,6 +308,16 @@ function loadBundle() {
 
 const isNode = (value) => value !== null && typeof value === 'object' && 'type' in value
 
+/** Render one plain component inside its own hook scope. */
+function childScope(react, type, props) {
+  react.beginChild(type.name)
+  try {
+    return type(props)
+  } finally {
+    react.endChild()
+  }
+}
+
 function render(node, react, forceSettings) {
   if (node === null || node === undefined || typeof node === 'boolean') return null
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -308,7 +339,7 @@ function render(node, react, forceSettings) {
       }
       return render(output, react, forceSettings)
     }
-    return render(type(props), react, forceSettings)
+    return render(childScope(react, type, props), react, forceSettings)
   }
   return { type, props: { ...props, children: render(props.children, react, forceSettings) ?? [] } }
 }
@@ -465,16 +496,44 @@ test('the time windows and the policy live inside the profile card', () => {
   const titles = sections.map((node) => findAll(node, hasClass('ar-section-title')).map(text)[0])
   assert.deepEqual(titles, ['chain', 'timeWindows', 'policy'])
 
-  // Which routes come first in a window is picked from the chain, not typed
-  // as provider/model keys.
-  const chips = findAll(card, hasClass('ar-chip'))
-  assert.equal(chips.length, 2, 'one priority chip per chain route')
-  assert.equal(chips.filter(hasClass('on')).length, 1, 'the window puts the DeepSeek route first')
-  assert.equal(chips.reduce((total, chip) => total + findAll(chip, (node) => node.props?.type === 'checkbox').length, 0), 2, 'each chip is a real checkbox')
+  // Which routes come first in a window is that window's own fallback chain,
+  // edited on the chain itself through the tab row above it.
+  assert.equal(findAll(card, hasClass('ar-chip')).length, 0, 'priority chips are gone')
+  const orderTabs = findAll(card, hasClass('ar-order-tabs'))[0]
+  assert.ok(orderTabs, 'the chain carries an order-tab row')
+  const tabs = findAll(orderTabs, (node) => node.type === 'button')
+  assert.equal(tabs.length, 2, 'the configured order plus one per window')
+  assert.equal(text(tabs[0]), 'defaultOrder')
+  // The active-window dot depends on the clock, so match the label, not the
+  // whole caption.
+  assert.ok(text(tabs[1]).includes('谷时'), 'a window tab is labelled with the window')
+  assert.ok(hasClass('primary')(tabs[0]), 'the configured order is selected by default')
+  assert.ok(
+    findAll(card, hasClass('ar-order-preview')).some((node) => text(node).includes('deepseek-account/deepseek-flash')),
+    'the window previews the order it will use',
+  )
 
   // The only remaining <details> are the per-route effort maps.
   const details = findAll(card, hasClass('ar-details'))
   assert.equal(details.length, 2, 'effort maps stay disclosures; windows and policy are sections')
+})
+
+test('a time window is edited as a complete fallback chain of its own', () => {
+  const setupResult = setup()
+  setupResult.react.override('ProfileCard', ['w'])
+  const { tree } = renderPage(setupResult)
+
+  const card = findAll(tree, hasClassList(['ar-card']))[0]
+  const tabs = findAll(findAll(card, hasClass('ar-order-tabs'))[0], (node) => node.type === 'button')
+  assert.ok(hasClass('primary')(tabs[1]), 'the selected window owns the chain editor')
+
+  // The window puts the DeepSeek route first, so the rows follow that order.
+  const rows = findAll(card, hasClassList(['ar-entry']))
+  assert.equal(rows.length, 2)
+  const providerOf = (row) => findAll(row, (node) => node.type === 'select')[0]?.props.value
+  assert.equal(providerOf(rows[0]), 'deepseek-account', 'the window order leads the rows')
+  assert.equal(providerOf(rows[1]), 'opendesign')
+  assert.ok(text(card).includes('orderTabHint'), 'the page says which order is being edited')
 })
 
 test('save is always available and undo is its local inverse', () => {
