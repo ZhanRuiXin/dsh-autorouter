@@ -57,11 +57,22 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
   let handle
   let registered = false
   let cache
+  /**
+   * What this plugin last wrote, kept until the host document reports it back.
+   * `settings.describe()` projects the loader snapshot, which can lag a whole
+   * tick behind `settings.replace()`, so without this the page saves, then
+   * reads the pre-write config back and looks like the save was undone.
+   */
+  let written
 
   const getLlm = () => llm
   const getState = () => state
 
   function getConfig() {
+    if (written !== undefined) {
+      if (written.until > Date.now()) return written.value
+      written = undefined
+    }
     if (settings !== undefined && typeof settings.describe === 'function') {
       try {
         const descriptor = matchSettingsEntry(settings.describe())
@@ -95,6 +106,11 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
   function invalidate() {
     cache = undefined
     adapter.infoCache.clear()
+  }
+
+  function remember(value) {
+    written = { value, until: Date.now() + 10_000 }
+    invalidate()
   }
 
   function reconcile() {
@@ -175,6 +191,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
     reconcile()
     const dispose = ctx.on('settings/document-updated', (ns) => {
       if (ns !== ENTRY_ID && !String(ns).endsWith(`:${ENTRY_ID}`)) return
+      written = undefined
       invalidate()
       reconcile()
     })
@@ -186,6 +203,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
       }
       settings = undefined
       cache = undefined
+      written = undefined
     }
   })
 
@@ -198,6 +216,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
       getState,
       getSelection,
       onConfigSaved: invalidate,
+      onConfigWritten: remember,
       logger,
     }),
   )

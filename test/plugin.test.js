@@ -28,14 +28,32 @@ function makeHarness() {
   const listeners = new Map()
   let revision = 3
   let value = { enabled: true }
+  let visible = value
+  let visibleRevision = revision
+
+  const harness = {
+    /** Simulates a host whose settings projection lags behind the write. */
+    lag(active) {
+      if (!active && visible !== value) {
+        visible = value
+        visibleRevision = revision
+      }
+      lagging = active
+    },
+  }
+  let lagging = false
 
   const settings = {
-    describe: () => [{ ns: ENTRY_ID, value, revision }],
+    describe: () => [{ ns: ENTRY_ID, value: visible, revision: visibleRevision }],
     async replace(ns, next, expected) {
-      if (expected !== revision) throw new Error('revision conflict')
+      if (expected !== visibleRevision) throw new Error('revision conflict')
       await Promise.resolve()
       value = next
       revision += 1
+      if (!lagging) {
+        visible = next
+        visibleRevision = revision
+      }
       saved.push({ ns, revision, value: next })
     },
   }
@@ -110,7 +128,7 @@ function makeHarness() {
     },
   }
 
-  return { ctx, provided, routes, adapters, saved, effects, listeners, get revision() { return revision } }
+  return { ctx, provided, routes, adapters, saved, effects, listeners, lag: harness.lag, get revision() { return revision } }
 }
 
 function fakeRes() {
@@ -214,6 +232,29 @@ test('state and config handlers are well formed, and a stale revision is refused
   assert.equal(harness.saved.length, 1)
   assert.equal(harness.saved[0].value.enabled, false)
   assert.equal(harness.saved[0].value.profiles.length, 1)
+})
+
+test('a save answers with the written config even while the host projection lags', async () => {
+  const harness = makeHarness()
+  plugin.apply(harness.ctx, {})
+  harness.lag(true)
+
+  const saved = await call(harness, '/api/autorouter/config', {
+    method: 'PUT',
+    body: { value: { enabled: false }, revision: 3 },
+  })
+  assert.equal(saved.status, 200)
+  assert.equal(saved.body.config.enabled, false, 'the response must echo the write, not the stale document')
+  assert.equal(harness.saved[0].value.enabled, false)
+
+  const state = await call(harness, '/api/autorouter/state')
+  assert.equal(state.status, 200)
+  assert.equal(state.body.config.enabled, false, 'the status read must see the write before the loader catches up')
+
+  harness.lag(false)
+  const settled = await call(harness, '/api/autorouter/state')
+  assert.equal(settled.body.config.enabled, false)
+  assert.equal(settled.body.revision, 4)
 })
 
 test('catalog, probe and cooldown answer from the live llm runtime', async () => {

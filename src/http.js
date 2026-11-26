@@ -54,7 +54,7 @@ function redact(config) {
 }
 
 export function installRoutes(deps) {
-  const { webServer, getConfig, getSettings, getLlm, getState, getSelection, onConfigSaved, logger } = deps
+  const { webServer, getConfig, getSettings, getLlm, getState, getSelection, onConfigSaved, onConfigWritten, logger } = deps
   let catalogCache
 
   async function providerDirectory(llm) {
@@ -187,6 +187,10 @@ export function installRoutes(deps) {
         } catch (error) {
           return json(res, 409, { error: `save failed: ${error.message}`, revision: descriptor.revision })
         }
+        // Hand back what was just written. Re-projecting through describe() here
+        // returns the pre-write document whenever the loader snapshot has not
+        // caught up yet, which makes Save look like it silently reverted.
+        onConfigWritten?.(next)
         onConfigSaved?.()
         let fresh
         try {
@@ -194,7 +198,7 @@ export function installRoutes(deps) {
         } catch {
           fresh = undefined
         }
-        json(res, 200, { ok: true, revision: fresh?.revision, config: redact(normalizeConfig(fresh?.value ?? next)) })
+        json(res, 200, { ok: true, revision: fresh?.revision ?? descriptor.revision + 1, config: redact(next) })
       },
     },
     {

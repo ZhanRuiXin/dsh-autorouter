@@ -1508,7 +1508,9 @@ window.__ModuleLoader__.load({
           setJsonText(JSON.stringify(body.config, null, 2))
           setDirty(false)
           flash(t('saved'))
-          await load()
+          // Only the status block needs a refresh: re-reading the config would
+          // write a possibly lagging server projection over what was just saved.
+          await refreshStatus()
         } catch (failure) {
           if (!alive.current) return
           if (failure.status === 409 && failure.body?.config) {
