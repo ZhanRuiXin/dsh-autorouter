@@ -4,6 +4,13 @@ Notable changes to `dsh-autorouter`. The shape follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses semantic versioning.
 Every version below was a working bundle: the suite passes on each tagged commit.
 
+## 0.3.0
+
+- a profile can be copied from its card head: the copy keeps the whole configuration (chain, its
+  per-window orders, policy) and lands right below the source. Because the profile id is the model
+  id the picker shows, the copy takes `-copy` (then `-copy-2`, …) and the display name carries the
+  same marker, so two rows never read alike.
+
 ## 0.2.1
 
 - README rewritten in the house style of the sibling `research-team-preset` plugin: badge row,

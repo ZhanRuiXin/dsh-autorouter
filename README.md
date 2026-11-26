@@ -4,7 +4,7 @@
 
 **A DSH plugin that makes every provider and model you already registered look like one provider, with a fallback chain behind it.**
 
-**Version 0.2.1** · **Updated 2026-11-26**
+**Version 0.3.0** · **Updated 2026-11-26**
 
 <p align="center"><strong>English</strong> · <a href="docs/README.zh-CN.md">简体中文</a></p>
 
@@ -62,7 +62,7 @@ AutoRouter ships as a DSH bundle and is published on npm as `dsh-autorouter`.
 ### Install from the DSH plugins page
 
 1. Open **Settings → Plugins** and click **Add**.
-2. Paste the install spec: `dsh-autorouter@0.2.1` for the npm package, `github:ZhanRuiXin/dsh-autorouter#v0.2.1` to pin the source, or `link:/absolute/path/to/dsh-autorouter` for a local checkout.
+2. Paste the install spec: `dsh-autorouter@0.3.0` for the npm package, `github:ZhanRuiXin/dsh-autorouter#v0.3.0` to pin the source, or `link:/absolute/path/to/dsh-autorouter` for a local checkout.
 3. **Restart DSH.** The host half registers the adapter and the HTTP routes at startup; the client half loads with the page.
 4. Open **Settings → AutoRouter**, create a profile, and add the routes you want in the chain.
 
@@ -86,7 +86,7 @@ A fresh install ships **no route plan** on purpose: nothing is routed until you 
 
 1. **+ New profile** — the profile id becomes the model id (`auto` → `AutoRouter / auto`).
 2. **Add route** — pick a provider and a model from the registered ones. Repeat for each route; the order in the card is the order they are tried.
-3. **Save**. The header version line should read `host v0.2.1`; if it says the host has not reported a version, DSH is still running the old process.
+3. **Save**. The header version line should read `host v0.3.0`; if it says the host has not reported a version, DSH is still running the old process.
 4. **Try once** on the status tab. It sends one real minimal request through `autorouter/<profile>` and reports the route that served it, the elapsed time and the text.
 5. Pick `AutoRouter / <profile>` in the model picker, or point `agent-default-model` at `{ "provider": "autorouter", "model": "auto" }`.
 
@@ -134,7 +134,7 @@ In the settings page the window buttons sit above the chain: pick a button and t
 
 Three tabs, nothing else:
 
-- **Routes** — one card per profile, the card head is the expand/collapse control. Inside, three sections separated by hairlines: **chain**, **time windows**, **policy**. There is no "selected profile": every setting lives in the card it belongs to, so a change can never land on a profile you were not looking at.
+- **Routes** — one card per profile, the card head is the expand/collapse control. Inside, three sections separated by hairlines: **chain**, **time windows**, **policy**. There is no "selected profile": every setting lives in the card it belongs to, so a change can never land on a profile you were not looking at. **Copy** on the card head clones the whole profile — chain, windows and policy — one slot below the source, with `-copy` on the id (then `-copy-2`, …) and a marked display name, because the id is the model id the picker shows and two identical rows would be indistinguishable.
 - **Live status** — cooldowns and failure counts per route, the sticky sessions, the request counters, `Try once`, and the `host vX.Y.Z` line. It is deliberately not on the routes tab: editing a chain should not have a table ticking every two seconds next to it.
 - **JSON** — the whole configuration, editable, folded back into the form on apply.
 

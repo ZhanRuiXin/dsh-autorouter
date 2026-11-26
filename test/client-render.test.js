@@ -165,7 +165,9 @@ function makeReact() {
         assert.deepEqual(initial, spec.initial, `useState #${slot} initial value changed`)
       }
       slot += 1
-      return [spec.value, () => {}]
+      // A setter records its updater instead of dropping it: a test can click a
+      // button, then apply the recorded updater to the current value.
+      return [spec.value, (updater) => { (spec.sets ??= []).push(updater) }]
     }
     const scope = childStack[childStack.length - 1]
     if (scope !== undefined) {
@@ -433,7 +435,7 @@ function renderPage(setupResult, { tab = 'routes', collapsed = [], scheme = 'lig
   const page = setupResult.section.component
   const t = (key) => key
   const tree = render(createElement(page, { t, close: () => {} }), setupResult.react, scenario)
-  return { tree, t }
+  return { tree, t, scenario }
 }
 
 test('the routes tab renders one card per profile, without the status card', () => {
@@ -466,6 +468,44 @@ test('the routes tab renders one card per profile, without the status card', () 
     1,
     'a route row still carries exactly its own checkbox',
   )
+})
+
+test('a profile can be copied, and the copy marks its id and name', () => {
+  const setupResult = setup()
+  const { tree, scenario } = renderPage(setupResult)
+
+  const copy = findAll(tree, (node) => node.type === 'button' && text(node) === 'copyProfile')
+  assert.equal(copy.length, 1, 'each profile card offers a copy action')
+
+  copy[0].props.onClick()
+  assert.equal(scenario[3].sets.length, 1, 'copying edits the draft instead of the server')
+  const next = scenario[3].sets[0](structuredClone(CONFIG))
+
+  assert.equal(next.profiles.length, 2)
+  assert.equal(next.profiles[0].id, 'auto', 'the source keeps its id')
+  assert.equal(next.profiles[1].id, 'auto-copy', 'the id is the model id, so the copy takes a marker')
+  assert.ok(next.profiles[1].name.startsWith('Auto'), 'the display name keeps its stem')
+  assert.notEqual(next.profiles[1].name, 'Auto', 'the display name carries a marker too')
+  assert.deepEqual(next.profiles[1].chain, CONFIG.profiles[0].chain, 'the chain comes along')
+  assert.deepEqual(next.profiles[1].policy, CONFIG.profiles[0].policy, 'the policy and its windows come along')
+})
+
+test('a second copy steps past an id that is already taken', () => {
+  const config = structuredClone(CONFIG)
+  config.profiles.push({ ...structuredClone(CONFIG.profiles[0]), id: 'auto-copy', name: 'Auto copy' })
+
+  const setupResult = setup()
+  const { tree, scenario } = renderPage(setupResult, { config })
+
+  const copy = findAll(tree, (node) => node.type === 'button' && text(node) === 'copyProfile')
+  assert.equal(copy.length, 2, 'every card offers the action')
+
+  copy[0].props.onClick()
+  const next = scenario[3].sets[0](structuredClone(config))
+
+  assert.equal(next.profiles.length, 3)
+  assert.equal(next.profiles[1].id, 'auto-copy-2', 'a taken marker is not reused')
+  assert.ok(next.profiles[1].name.startsWith('Auto'))
 })
 
 test('both locales carry exactly the same keys', () => {

@@ -123,6 +123,10 @@ window.__ModuleLoader__.load({
       routesHint: '每个档位一张卡片：标识、路由链、时间段与策略都在里面。',
       addProfile: '新建档位',
       removeProfile: '删除档位',
+      copyProfile: '复制档位',
+      copyHint: '复制一份配置，标识与显示名自动加标记',
+      copyNameSuffix: '（副本）',
+      copyNameSuffixN: '（副本 {n}）',
       profileId: '标识',
       profileName: '显示名',
       profileDisabled: '已停用',
@@ -246,6 +250,10 @@ window.__ModuleLoader__.load({
       routesHint: 'One card per profile: identity, chain, time windows and policy all live inside it.',
       addProfile: 'New profile',
       removeProfile: 'Delete profile',
+      copyProfile: 'Copy profile',
+      copyHint: 'Copy this configuration; the id and name get a marker',
+      copyNameSuffix: ' (copy)',
+      copyNameSuffixN: ' (copy {n})',
       profileId: 'Id',
       profileName: 'Name',
       profileDisabled: 'disabled',
@@ -771,7 +779,7 @@ window.__ModuleLoader__.load({
     }
 
     function ProfileCard(props) {
-      const { profile, index, t, catalog, onEdit, onRemove, onAddRoute, probes, onProbe } = props
+      const { profile, index, t, catalog, onEdit, onRemove, onCopy, onAddRoute, probes, onProbe } = props
       const policy = profile.policy ?? {}
       const windows = policy.timeWindows ?? []
       const chain = profile.chain ?? []
@@ -866,11 +874,18 @@ window.__ModuleLoader__.load({
             !profile.enabled ? h('span', { key: 'off', className: 'ar-badge warn' }, t('profileDisabled')) : null,
             profile.chain.length === 0 ? h('span', { key: 'empty', className: 'ar-badge bad' }, t('profileEmpty')) : null,
           ],
-          actions: h(
-            'button',
-            { className: 'ar-btn tiny danger', type: 'button', onClick: () => onRemove(index), disabled: props.profileCount <= 1 },
-            t('removeProfile'),
-          ),
+          actions: [
+            h(
+              'button',
+              { key: 'copy', className: 'ar-btn tiny', type: 'button', onClick: () => onCopy(index), title: t('copyHint') },
+              t('copyProfile'),
+            ),
+            h(
+              'button',
+              { key: 'remove', className: 'ar-btn tiny danger', type: 'button', onClick: () => onRemove(index), disabled: props.profileCount <= 1 },
+              t('removeProfile'),
+            ),
+          ],
         },
         h(
           'div',
@@ -1555,6 +1570,39 @@ window.__ModuleLoader__.load({
         })
       }
 
+      // A copy has to be addressable on its own: the id is the model id the
+      // picker shows, so it takes a marker plus a counter until it is free, and
+      // the display name carries the same marker so two cards never read alike.
+      function copyProfile(index) {
+        const source = draft.profiles[index]
+        if (source === undefined) return
+        const ids = new Set(profiles.map((item) => item.id))
+        const base = `${source.id || 'profile'}-copy`
+        let id = base
+        let count = 1
+        while (ids.has(id)) {
+          count += 1
+          id = `${base}-${count}`
+        }
+        const suffix = count === 1 ? t('copyNameSuffix') : t('copyNameSuffixN').replace('{n}', String(count))
+        editDraft((next) => {
+          next.profiles.splice(index + 1, 0, {
+            ...structuredClone(source),
+            id,
+            name: `${source.name || source.id || id}${suffix}`,
+          })
+        })
+        // The copy lands one slot lower, so make sure its card is not inheriting
+        // a collapsed state that belonged to the card it displaced.
+        setCollapsed((current) => {
+          if (!current.has(`profile:${index + 1}`)) return current
+          const next = new Set(current)
+          next.delete(`profile:${index + 1}`)
+          writeCollapsed(next)
+          return next
+        })
+      }
+
       function addRoute(profileId, { provider, model }) {
         editDraft((next) => {
           const target = next.profiles.find((item) => item.id === profileId)
@@ -1680,6 +1728,7 @@ window.__ModuleLoader__.load({
                   onProbe: probe,
                   onEdit: (patch) => editProfile(index, patch),
                   onRemove: removeProfile,
+                  onCopy: copyProfile,
                   onAddRoute: addRoute,
                 }),
               ),
