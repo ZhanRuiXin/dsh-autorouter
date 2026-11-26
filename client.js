@@ -43,9 +43,11 @@ window.__ModuleLoader__.load({
 .ar-field{display:flex;flex-direction:column;gap:3px;min-width:0}
 .ar-label{font-size:11.5px;opacity:.68}
 .ar-input,.ar-select{background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.30);color:inherit;border-radius:6px;padding:3px 6px;font:inherit;font-size:12px;min-width:0}
-.ar-root{color-scheme:light}
+.ar-root{color-scheme:inherit}
 .ar-root[data-scheme="dark"]{color-scheme:dark}
-.ar-select option{background:Canvas;color:CanvasText}
+.ar-root[data-scheme="light"]{color-scheme:light}
+.ar-select option{background:#ffffff;color:#1c1c1c}
+.ar-root[data-scheme="dark"] .ar-select option{background:#242424;color:#eaeaea}
 .ar-textarea{color-scheme:inherit}
 .ar-input:focus,.ar-select:focus{outline:2px solid rgba(59,130,246,.45);outline-offset:0}
 .ar-input.num{width:82px}
@@ -349,8 +351,20 @@ window.__ModuleLoader__.load({
     /**
      * Native select popups are painted by the browser, so they follow the
      * element's `color-scheme`, not our CSS. Prefer an explicit scheme declared
-     * by the host, then its dark/light marker, then the OS preference.
+     * by the host, then its dark/light marker, then the page's actual paint,
+     * then the OS preference.
      */
+    function backgroundLuminance(element) {
+      if (element === null || element === undefined) return undefined
+      const color = String(getComputedStyle(element).backgroundColor ?? '')
+      const match = color.match(/rgba?\(([^)]+)\)/)
+      if (match === null) return undefined
+      const parts = match[1].split(',').map((part) => Number(part.trim()))
+      if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return undefined
+      if ((parts[3] ?? 1) < 0.5) return undefined
+      return (0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]) / 255
+    }
+
     function detectScheme() {
       if (typeof window === 'undefined' || typeof document === 'undefined') return 'light'
       try {
@@ -366,6 +380,12 @@ window.__ModuleLoader__.load({
           if (theme === 'light') return 'light'
           if (element.classList?.contains('dark')) return 'dark'
           if (element.classList?.contains('light')) return 'light'
+        }
+        // DSH may switch themes without declaring color-scheme or a class we can
+        // see. The painted background is the last theme-bearing signal.
+        for (const element of [body, root]) {
+          const luminance = backgroundLuminance(element)
+          if (luminance !== undefined) return luminance < 0.5 ? 'dark' : 'light'
         }
         return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
       } catch {
@@ -958,7 +978,7 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { className: 'ar-root', 'data-scheme': scheme },
+        { className: 'ar-root', 'data-scheme': scheme, style: { colorScheme: scheme } },
         h(
           'div',
           { className: 'ar-head' },

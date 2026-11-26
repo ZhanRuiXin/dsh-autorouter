@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
+import { matchSettingsEntry, normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
 import { mapEffort, unionEfforts } from '../src/router/effort.js'
 import { classifyFailure } from '../src/router/classify.js'
 import { resolveProfileInfo, toModelInfo } from '../src/router/model-info.js'
@@ -246,4 +246,18 @@ test('a time window reorders the chain', () => {
   profile.policy.mode = 'quality'
   profile.policy.timeWindows = [{ id: 'w', label: 'w', from: 0, to: 1439, utcOffsetMinutes: 480, order: ['b'] }]
   assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
+})
+
+test('matchSettingsEntry resolves the plain and the include-prefixed profile row', () => {
+  const plain = [{ ns: 'ui-settings-account' }, { ns: 'llm-autorouter', revision: 4 }]
+  assert.equal(matchSettingsEntry(plain)?.revision, 4)
+
+  const prefixed = [{ ns: 'include:llm-autorouter', revision: 7 }]
+  assert.equal(matchSettingsEntry(prefixed)?.revision, 7)
+
+  const suffixed = [{ ns: 'some-layer:llm-autorouter', revision: 9 }]
+  assert.equal(matchSettingsEntry(suffixed)?.revision, 9)
+
+  assert.equal(matchSettingsEntry([{ ns: 'llm-fallbacks' }]), undefined)
+  assert.equal(matchSettingsEntry(undefined), undefined)
 })

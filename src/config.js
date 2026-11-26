@@ -11,6 +11,20 @@ export const PROVIDER_NAME = 'AutoRouter'
 export const ENTRY_ID = 'llm-autorouter'
 export const CONFIG_VERSION = 1
 
+/**
+ * The loader materialises a bundle-inserted row as `include:<patch id>`, while
+ * a row written directly into the profile patch keeps its own id. Resolve both
+ * instead of pinning one spelling.
+ */
+export function matchSettingsEntry(descriptors, entryId = ENTRY_ID) {
+  const list = Array.isArray(descriptors) ? descriptors : []
+  for (const ns of [entryId, `include:${entryId}`]) {
+    const hit = list.find((item) => item?.ns === ns)
+    if (hit !== undefined) return hit
+  }
+  return list.find((item) => typeof item?.ns === 'string' && item.ns.endsWith(`:${entryId}`))
+}
+
 export const DEFAULT_TRIGGER_CODES = ['AUTH', 'QUOTA', 'RATE_LIMIT']
 export const DEFAULT_TRIGGER_STATUSES = [401, 402, 403, 408, 409, 425, 429, 500, 502, 503, 504, 529]
 

@@ -17,6 +17,7 @@ import {
   DEFAULT_CONFIG,
   ENTRY_ID,
   PROVIDER_ID,
+  matchSettingsEntry,
   normalizeConfig,
   resolveProfile,
 } from './src/config.js'
@@ -63,7 +64,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
   function getConfig() {
     if (settings !== undefined && typeof settings.describe === 'function') {
       try {
-        const descriptor = settings.describe().find((item) => item.ns === ENTRY_ID)
+        const descriptor = matchSettingsEntry(settings.describe())
         if (descriptor !== undefined) {
           if (cache !== undefined && cache.revision === descriptor.revision && Date.now() - cache.at < 5000) {
             return cache.value
@@ -173,7 +174,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
     invalidate()
     reconcile()
     const dispose = ctx.on('settings/document-updated', (ns) => {
-      if (ns !== ENTRY_ID) return
+      if (ns !== ENTRY_ID && !String(ns).endsWith(`:${ENTRY_ID}`)) return
       invalidate()
       reconcile()
     })

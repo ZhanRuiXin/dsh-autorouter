@@ -6,7 +6,7 @@
  * It never returns credentials, prompts or message bodies.
  */
 
-import { ENTRY_ID, PROVIDER_ID, normalizeConfig } from './config.js'
+import { ENTRY_ID, PROVIDER_ID, matchSettingsEntry, normalizeConfig } from './config.js'
 
 const MAX_BODY = 2 * 1024 * 1024
 
@@ -117,7 +117,7 @@ export function installRoutes(deps) {
         const settings = getSettings()
         let descriptor
         try {
-          descriptor = settings?.describe?.().find((item) => item.ns === ENTRY_ID)
+          descriptor = matchSettingsEntry(settings?.describe?.())
         } catch (error) {
           logger?.warn?.(`llm-autorouter: settings.describe failed: ${error.message}`)
         }
@@ -142,7 +142,7 @@ export function installRoutes(deps) {
           const settings = getSettings()
           let descriptor
           try {
-            descriptor = settings?.describe?.().find((item) => item.ns === ENTRY_ID)
+            descriptor = matchSettingsEntry(settings?.describe?.())
           } catch {
             descriptor = undefined
           }
@@ -168,7 +168,7 @@ export function installRoutes(deps) {
         if (next.service.token === '' && current.service.token !== '') next.service.token = current.service.token
         let descriptor
         try {
-          descriptor = settings.describe().find((item) => item.ns === ENTRY_ID)
+          descriptor = matchSettingsEntry(settings.describe())
         } catch (error) {
           return json(res, 503, { error: `settings unavailable: ${error.message}` })
         }
@@ -184,14 +184,14 @@ export function installRoutes(deps) {
           })
         }
         try {
-          settings.replace(ENTRY_ID, next, descriptor.revision)
+          settings.replace(descriptor.ns, next, descriptor.revision)
           onConfigSaved?.()
         } catch (error) {
           return json(res, 409, { error: `save failed: ${error.message}`, revision: descriptor.revision })
         }
         let fresh
         try {
-          fresh = settings.describe().find((item) => item.ns === ENTRY_ID)
+          fresh = matchSettingsEntry(settings.describe())
         } catch {
           fresh = undefined
         }
