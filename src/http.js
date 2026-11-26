@@ -184,11 +184,11 @@ export function installRoutes(deps) {
           })
         }
         try {
-          settings.replace(descriptor.ns, next, descriptor.revision)
-          onConfigSaved?.()
+          await settings.replace(descriptor.ns, next, descriptor.revision)
         } catch (error) {
           return json(res, 409, { error: `save failed: ${error.message}`, revision: descriptor.revision })
         }
+        onConfigSaved?.()
         let fresh
         try {
           fresh = matchSettingsEntry(settings.describe())

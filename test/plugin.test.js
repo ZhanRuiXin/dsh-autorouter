@@ -29,8 +29,9 @@ function makeHarness() {
 
   const settings = {
     describe: () => [{ ns: ENTRY_ID, value, revision }],
-    replace(ns, next, expected) {
+    async replace(ns, next, expected) {
       if (expected !== revision) throw new Error('revision conflict')
+      await Promise.resolve()
       value = next
       revision += 1
       saved.push({ ns, revision, value: next })
