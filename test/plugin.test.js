@@ -19,6 +19,17 @@ const ENTRY_ID = 'llm-autorouter'
 const PROVIDER_ID = 'autorouter'
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+const FIXTURE_PROFILE = {
+  id: 'auto',
+  name: 'Auto',
+  enabled: true,
+  chain: [
+    { id: 'opendesign-flash-eco', provider: 'opendesign', model: 'deepseek-v4.1-flash-eco', cooldownMs: 300_000, effortMap: {} },
+    { id: 'commandcode-flash', provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash', cooldownMs: 300_000, effortMap: {} },
+    { id: 'deepseek-account-flash', provider: 'deepseek-account', model: 'deepseek-flash', cooldownMs: 300_000, effortMap: {} },
+  ],
+}
+
 function makeHarness() {
   const provided = {}
   const routes = new Map()
@@ -27,7 +38,7 @@ function makeHarness() {
   const effects = []
   const listeners = new Map()
   let revision = 3
-  let value = { enabled: true }
+  let value = { enabled: true, profiles: [FIXTURE_PROFILE] }
   let visible = value
   let visibleRevision = revision
 

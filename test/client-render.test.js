@@ -295,9 +295,14 @@ function loadBundle() {
       return react
     })
     const ctx = {
-      effect: () => () => {},
+      effect: (callback) => {
+        const dispose = callback()
+        return () => dispose?.()
+      },
       locale: {
-        register: () => {},
+        register: (ns, tables) => {
+          localeSink?.(ns, tables)
+        },
         bind: () => (key) => (module.__dict?.[key] ?? key),
       },
       slots: {
@@ -397,24 +402,30 @@ const hasClassList = (names) => (node) => {
 
 // ---- tests ----------------------------------------------------------------
 
+let localeSink = undefined
+
 function setup() {
   const react = makeReact()
-  const { slots, styles, document } = loadBundle()(react)
   const dict = {}
+  const locales = {}
   // the page's own text comes from the locale dictionary; using keys keeps the
   // assertions independent of the translation
-  const locale = {
-    register: (_ns, tables) => Object.assign(dict, tables.zh ?? {}),
+  localeSink = (_ns, tables) => {
+    Object.assign(dict, tables.zh ?? {})
+    Object.assign(locales, tables)
   }
+  const { slots, styles, document } = loadBundle()(react)
   const section = slots.section[0]
   assert.ok(section, 'settings.section must be registered')
   const icon = slots.icon[0]
   assert.ok(icon, 'settings.section.icon must be registered')
-  return { react, slots, styles, document, section, icon, dict }
+  return { react, slots, styles, document, section, icon, dict, locales }
 }
 
-function renderPage(setupResult, { tab = 'routes', collapsed = [], scheme = 'light', dirty = false } = {}) {
+function renderPage(setupResult, { tab = 'routes', collapsed = [], scheme = 'light', dirty = false, config = CONFIG } = {}) {
   const scenario = SETTINGS_STATE.map((spec) => ({ ...spec }))
+  scenario[3].value = config
+  scenario[4].value = config
   scenario[8].value = tab
   scenario[10].value = dirty
   scenario[14].value = scheme
@@ -455,6 +466,34 @@ test('the routes tab renders one card per profile, without the status card', () 
     1,
     'a route row still carries exactly its own checkbox',
   )
+})
+
+test('both locales carry exactly the same keys', () => {
+  const { locales } = setup()
+  const zh = Object.keys(locales.zh ?? {}).sort()
+  const en = Object.keys(locales.en ?? {}).sort()
+  assert.ok(zh.length > 100, 'the dictionary is the page text, not a stub')
+  assert.deepEqual(en, zh, 'a missing translation would fall back to the other language mid-page')
+})
+
+test('every key the page asks for exists in both locales', () => {
+  const { locales } = setup()
+  const source = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const used = new Set([...source.matchAll(/\bt\('([A-Za-z0-9_]+)'\)/g)].map((match) => match[1]))
+  assert.ok(used.size > 80, 'the scan sees the page text')
+  const missing = [...used].filter((key) => !(key in (locales.zh ?? {})) || !(key in (locales.en ?? {})))
+  assert.deepEqual(missing, [], 'every label has a translation in both languages')
+})
+
+test('a fresh install explains the empty page instead of showing nothing', () => {
+  const setupResult = setup()
+  const { tree } = renderPage(setupResult, { config: { enabled: true, profiles: [], gateway: {}, service: {} } })
+
+  assert.equal(findAll(tree, hasClass('ar-card')).length, 0, 'no profile means no card')
+  assert.equal(findAll(tree, hasClass('ar-empty')).length, 1, 'the page says what to do next')
+  assert.ok(text(tree).includes('noProfiles'))
+  const labels = findAll(tree, (node) => node.type === 'button').map(text)
+  assert.ok(labels.includes('+ addProfile'), 'the way forward is still one click away')
 })
 
 test('the status tab owns the live route table', () => {

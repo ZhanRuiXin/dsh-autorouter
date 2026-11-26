@@ -53,54 +53,13 @@ export const DEFAULT_POLICY = {
   timeWindows: [],
 }
 
-/**
- * The shipped chain. Every entry is a normal DSH route: one credential, one
- * model. "Key rotation" is expressed as several entries, because DSH binds one
- * credential per provider route.
- */
-export const DEFAULT_PROFILE = {
-  id: 'auto',
-  name: 'Auto',
-  aliases: [],
-  enabled: true,
-  description: 'One route: OpenDesign -> CommandCode -> DeepSeek, strictly in chain order.',
-  chain: [
-    {
-      id: 'opendesign-flash-eco',
-      enabled: true,
-      provider: 'opendesign',
-      model: 'deepseek-v4.1-flash-eco',
-      label: 'OpenDesign · Flash Eco',
-      cooldownMs: 5 * 60 * 1000,
-      effortMap: {},
-    },
-    {
-      id: 'commandcode-flash',
-      enabled: true,
-      provider: 'commandcode',
-      model: 'deepseek/deepseek-v4.1-flash',
-      label: 'CommandCode · Flash',
-      cooldownMs: 5 * 60 * 1000,
-      effortMap: {},
-    },
-    {
-      id: 'deepseek-account-flash',
-      enabled: true,
-      provider: 'deepseek-account',
-      model: 'deepseek-flash',
-      label: 'DeepSeek · Flash',
-      cooldownMs: 5 * 60 * 1000,
-      effortMap: {},
-    },
-  ],
-  policy: { ...DEFAULT_POLICY },
-}
-
 export const DEFAULT_CONFIG = {
   version: CONFIG_VERSION,
   enabled: true,
   debug: false,
-  profiles: [DEFAULT_PROFILE],
+  // Empty on purpose: a fresh install routes nothing until the operator
+  // builds a chain from the providers they actually have credentials for.
+  profiles: [],
   gateway: {
     enabled: false,
     /** Served model id -> profile id. Empty means "every enabled profile". */
@@ -296,7 +255,7 @@ export function normalizeConfig(raw, { fallback = DEFAULT_CONFIG } = {}) {
     version: CONFIG_VERSION,
     enabled: boolean(source.enabled, fallback.enabled),
     debug: boolean(source.debug, fallback.debug),
-    profiles: normalizedProfiles.length > 0 ? normalizedProfiles : clone(DEFAULT_CONFIG.profiles),
+    profiles: normalizedProfiles,
     gateway: {
       enabled: boolean(gateway.enabled, false),
       models: isObject(gateway.models)

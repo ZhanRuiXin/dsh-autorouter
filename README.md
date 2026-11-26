@@ -1,63 +1,79 @@
 # AutoRouter (`dsh-autorouter`)
 
-一个 DSH 插件：把**已经登记在 DSH 里的** provider/model 聚合成一个虚拟 provider
-`AutoRouter`，DSH 侧只看到 `autorouter` 一条路由。
+English | [简体中文](README.zh-CN.md)
 
-它不代理 HTTP，也不接管密钥。每个上游尝试都通过 DSH 自己的 `llm.stream()` 派发，
-所以各家的方言、凭据、图片/附件、工具历史与 replay state 仍由原来的适配器处理。
+A DSH plugin that folds the provider/model routes **already registered in DSH** into one
+virtual provider, `AutoRouter`, so DSH itself only ever sees the single route `autorouter`.
+
+It does not proxy HTTP and it does not hold keys. Every upstream attempt is dispatched
+through DSH's own `llm.stream()`, so each vendor's dialect, credentials, images and
+attachments, tool history and replay state stay with the adapter that already knows them.
 
 ```
-DSH ──► autorouter/<profile> ──► 回退链
+DSH ──► autorouter/<profile> ──► fallback chain
                                   ├─ opendesign/deepseek-v4.1-flash-eco
                                   ├─ commandcode/deepseek/deepseek-v4.1-flash
                                   └─ deepseek-account/deepseek-flash
 ```
 
-## 能力
+## What it does
 
-- **一条虚拟路由，多条上游**：`AutoRouter / auto`（可再加 profile，每个 profile 是一条链）。
-- **只在首个输出块之前切换**：`block-start`、文本、思考、工具调用增量都会提交本次尝试；
-  提交后失败原样转发，不再换路由。`usage` 不提交，但会缓存并在切换前补发，花费不丢。
-- **冷却与恢复**：失败的路由进入冷却（可配 `Retry-After`、半开恢复），冷却中的路由不会进候选。
-  AutoRouter 不设请求额度：配额由上游的 429 决定，本地账本只会制造看不见的限流。
-- **设置页即 UI**：链编辑、冷却、触发码、时段窗口、思考强度映射、实时状态都在
-  **设置 → AutoRouter** 里完成，卡片可收起（折叠状态记在 `localStorage`），写回仍是带 revision 的 settings 文档。
-- **会话粘性**：同一 `sessionId` 优先落回上次成功的路由，保住上游 prompt cache；
-  会话超过 TTL 或该路由失败后才重新选路。
-- **思考强度继承**：虚拟模型公布链上所有路由的 effort 并集；每次尝试按
-  `effortMap` → 目标 `defaultEffort` → 省略 的顺序折算，默认 clamp（可改 fail/drop）。
-  上游报 `UNSUPPORTED_REASONING_EFFORT` 时，去掉该参数对同一路由重试一次。
-- **能力取交集/保守值**：输入模态取交集，上下文窗口取已知最小值，`toolUpdate` 只要有
-  一个路由要求 `addition-only` 就声明 `addition-only`。
+- **One virtual route, many upstreams**: `AutoRouter / auto`, plus as many extra profiles as
+  you want — one profile is one chain.
+- **Switches only before the first output block**: `block-start`, text, reasoning and
+  tool-call deltas all commit the attempt; a failure after that is forwarded as-is instead of
+  switching. `usage` does not commit, but it is buffered and replayed before a switch, so the
+  spend is never lost.
+- **Cooldown and recovery**: a failed route cools down (honouring `Retry-After` when the
+  upstream sends one, with half-open recovery), and a cooling route never enters the
+  candidate set. AutoRouter keeps no request budget: the upstream's 429 is the real quota
+  signal, and a local ledger only invents rate limits nobody can see.
+- **The settings page is the UI**: chain editing, cooldown, trigger codes, time windows,
+  reasoning-effort mapping and live status all live under **Settings → AutoRouter**. Cards
+  collapse (the state is remembered in `localStorage`), and every write still goes through the
+  revision-checked settings document.
+- **Session stickiness**: the same `sessionId` prefers the route that served it last, which
+  keeps the upstream prompt cache warm; a route is only re-chosen when the session passes its
+  TTL or that route fails.
+- **Reasoning effort is inherited**: the virtual model advertises the union of the efforts
+  declared along the chain; each attempt resolves the requested effort through
+  `effortMap` → the target's `defaultEffort` → omit, clamping by default (switchable to
+  `fail` or `drop`). If an upstream answers `UNSUPPORTED_REASONING_EFFORT` anyway, the
+  parameter is dropped and the same route is retried once.
+- **Capabilities take the intersection, or the conservative value**: input modalities are
+  intersected, the context window is the smallest known one, and `toolUpdate` is declared
+  `addition-only` as soon as one route in the chain requires it.
 
-## 安装
+## Install
 
-本仓库通过 `link:` 安装进 profile：
+This repository is installed into a profile with `link:`:
 
 ```jsonc
-// C:\Users\ADMIN\.dsh\profiles\desktop\package.json
+// %USERPROFILE%\.dsh\profiles\desktop\package.json  (or $DSH_HOME/profiles/desktop/package.json)
 "dependencies": { "dsh-autorouter": "link:E:/Repositories/Deepseek Harness/auto-provider-router" },
-"dsh": { "profile": { "bundles": [ /* … 其他 bundle … */, "dsh-autorouter" ] } }
+"dsh": { "profile": { "bundles": [ /* … other bundles … */, "dsh-autorouter" ] } }
 ```
 
-DSH 只在插件声明了 `peerDependencies` 时才会把 `@deepseek-ai/*` 解析到安装目录。
-本包因此声明了 `@deepseek-ai/schemastery` 与 `@deepseek-ai/dsh-llm`；漏掉它们时
-进程会报 `Cannot find package '@deepseek-ai/schemastery'`，插件行停在 `inactive`
-（`cordis_inspect` 的 Config 状态不会是 `schema`）。
+DSH resolves `@deepseek-ai/*` for a plugin only when that plugin declares them in
+`peerDependencies`. This package therefore declares `@deepseek-ai/schemastery` and
+`@deepseek-ai/dsh-llm`; without them the process reports
+`Cannot find package '@deepseek-ai/schemastery'` and the plugin row stays `inactive`
+(`cordis_inspect` will not show its Config as `schema`).
 
-设置页出现的硬性条件在 schema 上，不在 profile 行上。`settings.describe()` 只投影
-带 `meta.volatile` 的配置：`volatileForm()` 在整棵 schema 里找不到 volatile 字段时
-返回 `undefined`，该行就被整个跳过，保存时报 `no profile entry`。所以 `Config` 必须
-标成活的：
+Whether the settings page appears is decided by the schema, not by the profile row.
+`settings.describe()` only projects config that carries `meta.volatile`: `volatileForm()`
+returns `undefined` when it cannot find a volatile field anywhere in the schema, the entry is
+skipped entirely, and saving reports `no profile entry`. So `Config` must be marked live:
 
 ```js
 export const Config = z.object({ /* … */ }).extra('volatile', true)
 ```
 
-bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `describe()` 的 `ns`
-沿用这个 id；宿主侧因此按 `llm-autorouter`、`include:llm-autorouter`、
-`*:llm-autorouter` 依次匹配，而不是硬编码一个名字。profile 里再补一条同名行不是必需，
-但可以覆盖默认 `config`：
+The row inserted by the bundle's own patch has the id `include:llm-autorouter`, and
+`describe()` reuses that id as its `ns`. The host side therefore matches `llm-autorouter`,
+then `include:llm-autorouter`, then `*:llm-autorouter`, instead of hard-coding one name.
+Adding a profile row of the same name is not required, but it lets you override the default
+`config`:
 
 ```yaml
 - id: llm-autorouter
@@ -65,46 +81,56 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
   config: {}
 ```
 
-装好后（或改了文件后）对插件行触发一次重组即可：`plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`。
-这只重组 bundle 行；宿主机 JS 的改动仍要重启进程才会生效，client bundle 刷新页面即可。
-重启 DSH 后：
+Once it is installed (or after files change), recompose the plugin row:
+`plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`.
+That only recomposes the bundle row — a change to host-side JS still needs a process restart,
+while a client-bundle change only needs a page refresh. After restarting DSH:
 
-1. 设置 → **AutoRouter** 出现设置页；
-2. 模型选择器出现 `AutoRouter / auto`；
-3. 选择它，或把 `agent-default-model` 指到 `{ provider: "autorouter", model: "auto" }`。
+1. **Settings → AutoRouter** shows the settings page;
+2. the model picker lists `AutoRouter / auto`;
+3. pick it, or point `agent-default-model` at `{ provider: "autorouter", model: "auto" }`.
 
-## 设置页
+## Settings page
 
-设置页只有三个标签：**路由链**、**实时状态**、**JSON**。
+The page has exactly three tabs: **routes**, **live status** and **JSON**.
 
-- **路由链**：一个档位一张卡片，卡片的头部就是展开/收起按钮（点标题也能收起）。
-  卡片内部分成带分隔线的三块：**路由链**、**时间段**、**策略**，都直接可见，跟着卡片一起
-  收起或展开；不再需要先"选中"某个档位，也没有飘在卡片外面的独立设置块。
-  路由链顶部有一排时段按钮（`默认顺序` + 每个时段一个）。点哪个时段，就是在编辑**那个时段
-  自己的回退链**：上下箭头只改这个时段的顺序，`默认顺序` 改的是没有命中任何时段时用的链。
-  时段没列到的路由仍然排在最后兜底，所以一个时段永远不会把候选清空。
-  路由可从已登记 provider 与模型里选，
-  `Probe` 只做元数据可达性检查（列模型 + 解析模型信息），不发真实请求。
-- **实时状态**：每条路由的冷却/失败计数、统计与粘性会话；可单独清冷却。它不在路由链页，
-  免得编辑链时被一张每 2 秒跳动的表打扰。
-- **JSON**：直接编辑完整配置再回填表单。
+- **Routes**: one card per profile, and the card head is the expand/collapse control
+  (clicking the title works too). Inside, three sections separated by hairlines — **chain**,
+  **time windows** and **policy** — are all visible and collapse with the card; there is no
+  longer any need to "select" a profile first, and no floating settings block outside a card.
+  Above the chain sits a row of window buttons (`default order` plus one per window). The
+  button you pick decides which chain you are editing: the up/down arrows reorder **that
+  window's own fallback chain**, while `default order` edits the chain used when no window
+  matches. Routes a window does not list still run last as a fallback, so a window can never
+  empty the candidate set. Routes are picked from the registered providers and models, and
+  `Probe` only checks metadata reachability (list models plus resolve model info) — it does
+  not send a real request.
+- **Live status**: cooldown and failure counts per route, stats and sticky sessions, with a
+  per-route cooldown reset. It deliberately does not sit on the routes tab, so editing a chain
+  is not disturbed by a table that ticks every two seconds.
+- **JSON**: edit the whole configuration and fold it back into the form.
 
-头部两个按钮：**保存**随时可点（不必先产生改动），成功后立即刷新页面上的配置与版本号；
-**撤销**丢弃未保存的改动、回到上次保存的配置，不再重新请求服务器。
+Two header buttons: **Save** is always clickable (you do not have to make a change first) and
+refreshes the configuration and version on the page as soon as it succeeds; **Undo** throws
+away unsaved edits and returns to the last saved configuration without talking to the server.
 
-**实时状态**页右上角有 **试一次**：它会用 `autorouter/<档位>` 真实发一条极小请求（默认
-`Reply with the single word: ok`，`maxTokens` 24），返回命中路由、耗时与文本；失败时把终态
-原因带回来。状态卡同时显示 `host vX.Y.Z` —— 页面拿到的是宿主自己报的版本，和 `package.json`
-对不上就说明 DSH 还在跑旧进程，此时改宿主侧代码不会生效。
+The **live status** tab also has **Try once** in its top right corner: it sends one real
+minimal request through `autorouter/<profile>` (default prompt
+`Reply with the single word: ok`, `maxTokens` 24) and returns the route that served it, the
+elapsed time and the text, or the terminal reason when it fails. The status card shows
+`host vX.Y.Z` — the version the host itself reports. If it does not match `package.json`, DSH
+is still running the old process and host-side edits cannot have taken effect.
 
-页面通过同源 `/api/autorouter/*` 与宿主通信，配置写入仍走
-`settings.replace(ns, value, revision)`，因此有版本冲突保护（409 时提示重载）。
+The page talks to the host over same-origin `/api/autorouter/*`, and configuration writes
+still go through `settings.replace(ns, value, revision)`, so concurrent edits are protected
+(a 409 asks you to reload).
 
-## 配置
+## Configuration
 
-配置存放在 profile 行 `llm-autorouter` 的 `config` 里，由设置页写回。
-归一化入口是 `src/config.js` 的 `normalizeConfig`：所有数值有边界，非法/自指/重复路由会被丢弃，
-每个 profile 至少要有一条链。
+The configuration lives in the `config` of the profile row `llm-autorouter` and is written
+back by the settings page. Normalisation happens in `normalizeConfig` in `src/config.js`:
+every number is bounded, illegal, self-referential or duplicate routes are dropped, and each
+profile needs at least one chain.
 
 ```jsonc
 {
@@ -115,7 +141,7 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
     "policy": { "maxSwitches": 8, "cooldownMs": 300000, "sticky": true,
                 "effortPolicy": "clamp", "contextPolicy": "min",
                 "timeWindows": [
-                  { "id": "offpeak", "label": "低谷",
+                  { "id": "offpeak", "label": "off-peak",
                     "ranges": [{ "from": "00:30", "to": "08:30" },
                                { "from": "22:00", "to": "23:30" }],
                     "order": ["deepseek-account/deepseek-flash"] }
@@ -132,54 +158,68 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 }
 ```
 
-## 选路顺序
+## Routing order
 
-链数组就是尝试顺序：从头到尾，第一条可用路由获胜；没有加权轮换，也没有质量/成本打分。
-一次尝试只有在**输出前**失败、且错误码或状态码命中触发条件时才会切到下一条；
-一旦收到第一个内容块，失败会原样上报，不再切换。
+The chain array **is** the try order: top to bottom, the first usable route wins. There is no
+weighted rotation and no quality or cost scoring. An attempt only advances to the next route
+when it fails **before any output** and its error code or HTTP status matches the trigger set;
+once the first content block arrives, the failure is reported as-is.
 
-**时间段**不改路由集合，只换顺序：命中当前本地时间（默认 UTC+8）的窗口有**自己的一条回退链**
-（保存的是路由键列表 `order`，就是完整顺序），未列出的路由保持配置顺序排在最后兜底。
-一个时段可以覆盖多个**不连续**的时间段（`ranges`，例如 00:30–08:30 加 22:00–23:30），
-命中任意一段都算命中，它们共用同一条链；旧配置里单个 `{ from, to }` 会被自动折算成一段，
-不需要迁移。
-设置页在路由链卡片顶部用时段按钮切换要编辑的那条链，所以「不同时段用不同回退链」就是
-在这几个按钮之间切换后调顺序。每个时段默认是当前链的一份完整副本，可以独立排序：
-00:30–08:30 让 `deepseek-account/*` 优先，08:30–00:30 让其余路由优先。
+**Time windows** do not change the route set, only the order: the window matching local time
+(UTC+8 by default) has **its own fallback chain** — what is stored is a list of route keys in
+`order`, i.e. the complete ordering — and routes it does not list keep their configured
+position at the end as a fallback. One window may cover several **disjoint** stretches of the
+day (`ranges`, for example 00:30–08:30 plus 22:00–23:30); hitting any of them counts, and they
+share the one chain. A legacy single `{ from, to }` is folded into one range automatically, so
+no migration is needed.
 
-## 宿主接口
+The settings page switches which chain you edit with the window buttons above the chain, so
+"a different fallback chain per time window" is simply a matter of picking a button and
+reordering. A new window starts as a complete copy of the current chain and is then ordered
+independently.
 
-| 方法 | 路径 | 说明 |
+## Host API
+
+| Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/autorouter/state` | revision、脱敏配置、运行时状态（冷却/统计/粘性会话） |
-| GET/PUT | `/api/autorouter/config` | 读/写配置；PUT 带 `{value, revision}` |
-| GET | `/api/autorouter/catalog` | 已登记的 provider 与模型（排除 `autorouter`） |
-| POST | `/api/autorouter/probe` | `{provider, model}` 元数据可达性检查 |
-| POST | `/api/autorouter/cooldown` | `{key}` 清除单条冷却，`{}` 清全部 |
-| GET | `/api/autorouter/selection` | 当前各 profile 的候选顺序与阻塞原因 |
+| GET | `/api/autorouter/state` | revision, redacted configuration and runtime state (cooldowns, stats, sticky sessions) |
+| GET/PUT | `/api/autorouter/config` | read/write the configuration; PUT carries `{value, revision}` |
+| GET | `/api/autorouter/catalog` | registered providers and models (excluding `autorouter`) |
+| POST | `/api/autorouter/probe` | `{provider, model}` metadata reachability check |
+| POST | `/api/autorouter/cooldown` | `{key}` clears one cooldown, `{}` clears all |
+| GET | `/api/autorouter/selection` | current candidate order and blocking reason per profile |
 
-全部路由 `auth: 'required'`，监听在 DSH 已有的端口上，不新开 listener。
+Every route is `auth: 'required'` and is served on the DSH port that already exists — no extra
+listener is opened.
 
-## 已知限制
+## Known limitations
 
-- 助手消息的来源记为 `autorouter/<profile>`，上游的 `replayState` 因此不会被 DSH 保留；
-  每轮会重发完整历史（上游 prompt cache 仍有帮助，但 replay 型适配器拿不到增量）。
-- 冷却与统计是进程内的，重启 DSH 后清零；它们只反映本机观察到的失败，不是上游的真实配额。
-- catalog 只反映 DSH 已登记的模型，不做联网探测。
+- The assistant message source is recorded as `autorouter/<profile>`, so DSH does not retain
+  the upstream `replayState`; every turn resends the full history (the upstream prompt cache
+  still helps, but replay-style adapters get no delta).
+- Cooldowns and stats are in-process and reset when DSH restarts; they reflect failures
+  observed on this machine, not the upstream's real quota.
+- The catalog only reflects models DSH has registered; nothing is probed over the network.
 
-## 开发
+## Development
 
 ```bash
 node --test "test/*.test.js"
 ```
 
-`src/config.js`、`src/state.js`、`src/router/*` 不依赖 `@deepseek-ai/*`，可以脱离 DSH 单测。
-`test/plugin.test.js` 用 `test/stubs/hooks.mjs` 把 `@deepseek-ai/dsh-llm` 与
-`@deepseek-ai/schemastery` 映射到本地桩，因此 `apply()`、六个 HTTP 路由的收发
-（含 409 revision 冲突）和 `client.js` 的注册形状也能在纯 Node 下验证。
-`test/client-render.test.js` 不需要浏览器：它用一套极小的 React double 驱动 `client.js`
-里真正的渲染代码，按 tab 逐个跑（路由链与时段回退链、实时状态、JSON、折叠状态、导航图标）。
-`useState` 的调用顺序写进 `SETTINGS_STATE`，插入一个 hook 会直接失败，而不是悄悄画出另一个页面；
-子组件的初始状态可以用 `react.override('ProfileCard', ['w'])` 固定，用来渲染某个时段的链。
+`src/config.js`, `src/state.js` and `src/router/*` do not depend on `@deepseek-ai/*`, so they
+unit-test outside DSH. `test/plugin.test.js` maps `@deepseek-ai/dsh-llm` and
+`@deepseek-ai/schemastery` to local stubs through `test/stubs/hooks.mjs`, which means
+`apply()`, the request/response cycle of the HTTP routes (including the 409 revision conflict)
+and the registration shape of `client.js` run under plain Node. `test/client-render.test.js`
+needs no browser: a tiny React double drives the real rendering code in `client.js`, tab by
+tab (chains and per-window fallback chains, live status, JSON, collapsed state, nav icon). The
+`useState` call order is pinned in `SETTINGS_STATE`, so inserting a hook fails the test instead
+of quietly rendering a different page, and a child component's initial state can be pinned with
+`react.override('ProfileCard', ['w'])` to render one window's chain.
 
-一次真实补全仍要在 DSH 里确认。
+One real completion still has to be confirmed inside DSH.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

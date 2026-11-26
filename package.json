@@ -1,10 +1,21 @@
 {
   "name": "dsh-autorouter",
-  "version": "0.1.15",
-  "private": true,
+  "version": "0.2.0",
+  "description": "AutoRouter — one DSH provider in front of a fallback chain over every registered route, with reasoning effort inherited from the caller.",
   "type": "module",
-  "description": "AutoRouter — one DSH provider, a quota-aware fallback chain, reasoning effort inherited from the caller.",
   "license": "MIT",
+  "author": "Ruixin Zhan",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "llm",
+    "router",
+    "fallback",
+    "provider",
+    "reasoning-effort",
+    "settings-ui"
+  ],
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
@@ -21,7 +32,10 @@
     "bundle",
     "locale",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/*.test.js"

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { activeTimeWindow, applyTimeWindow, matchSettingsEntry, normalizeConfig, resolveProfile, entryKey } from '../src/config.js'
+import {
+  DEFAULT_POLICY,
+  activeTimeWindow,
+  applyTimeWindow,
+  matchSettingsEntry,
+  normalizeConfig,
+  resolveProfile,
+  entryKey,
+} from '../src/config.js'
 import { mapEffort, unionEfforts } from '../src/router/effort.js'
 import { classifyFailure } from '../src/router/classify.js'
 import { resolveProfileInfo, toModelInfo } from '../src/router/model-info.js'
@@ -14,14 +22,22 @@ function profileOf(raw, index = 0) {
   return normalizeConfig(raw).profiles[index]
 }
 
+test('a fresh install ships no profile at all', () => {
+  const config = normalizeConfig({})
+  assert.equal(config.enabled, true)
+  assert.deepEqual(config.profiles, [], 'a shipped chain would point at providers the operator may not own')
+  assert.equal(normalizeConfig({ profiles: [] }).profiles.length, 0)
+})
+
 test('normalizeConfig fills defaults and bounds numbers', () => {
   const config = normalizeConfig({})
   assert.equal(config.enabled, true)
-  assert.equal(config.profiles.length, 1)
-  const profile = config.profiles[0]
+  const profile = normalizeConfig({
+    profiles: [{ id: 'auto', name: 'Auto', chain: [{ provider: 'opendesign', model: 'deepseek-v4.1-flash-eco' }] }],
+  }).profiles[0]
   assert.equal(profile.id, 'auto')
   assert.equal(profile.name, 'Auto')
-  assert.equal(profile.chain.length, 3)
+  assert.equal(profile.chain.length, 1)
   assert.equal(profile.policy.maxSwitches, 8)
   assert.equal(profile.policy.effortPolicy, 'clamp')
 
@@ -109,7 +125,7 @@ test('mapEffort can fail instead of clamping', () => {
   assert.equal(verdict.effort, undefined)
 })
 
-const POLICY = normalizeConfig({}).profiles[0].policy
+const POLICY = DEFAULT_POLICY
 
 test('classifyFailure uses trigger codes and statuses', () => {
   assert.equal(classifyFailure({ code: 'QUOTA', status: 429 }, POLICY).retryable, true)

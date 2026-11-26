@@ -109,10 +109,11 @@ export class AutoRouterAdapter extends LlmAdapter {
     }
     const profile = resolveProfile(config, options.model)
     if (profile === undefined) {
+      const known = config.profiles.map((item) => item.id).join(', ')
       throw routeError(
-        `AutoRouter: unknown virtual model "${String(options.model)}" — pick one of ${config.profiles
-          .map((item) => item.id)
-          .join(', ')}.`,
+        known === ''
+          ? 'AutoRouter has no profile yet: create one in Settings → AutoRouter, then pick it as the model.'
+          : `AutoRouter: unknown virtual model "${String(options.model)}" — pick one of ${known}.`,
         'UNKNOWN_MODEL',
       )
     }

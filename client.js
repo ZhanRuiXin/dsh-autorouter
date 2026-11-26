@@ -93,6 +93,7 @@ window.__ModuleLoader__.load({
 .ar-section-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
 .ar-section-body{display:flex;flex-direction:column;gap:8px}
 .ar-order-tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ar-empty{padding:26px 12px;text-align:center;border:1px dashed rgba(128,128,128,.30);border-radius:10px}
 .ar-order-preview{font-size:11.5px;line-height:1.5;word-break:break-word}
 `
 
@@ -160,6 +161,7 @@ window.__ModuleLoader__.load({
       orderTabHint: '正在编辑该时段的回退顺序：上下箭头只改这个时段，未列出的路由仍然排在最后兜底。',
       orderEditHint: '在「回退链」上方的时段按钮里调整顺序。',
       noRoutes: '尚未添加路由',
+      noProfiles: '还没有档位：点右上角「+ 新建档位」，再从已登记的 provider 里添加路由。',
       sticky: '会话粘性',
       stickyHint: '同一会话尽量复用上一次成功的路由，保护提示缓存。',
       stickinessTtl: '粘性 TTL（分钟）',
@@ -282,6 +284,7 @@ window.__ModuleLoader__.load({
       orderTabHint: 'Editing this window’s own fallback order: the arrows change this window only, and routes it omits still run last.',
       orderEditHint: 'Reorder it from the window buttons above the chain.',
       noRoutes: 'No routes yet',
+      noProfiles: 'No profile yet: use “+ New profile” at the top right, then add routes from your registered providers.',
       sticky: 'Session stickiness',
       stickyHint: 'Reuse the last successful route for a session to protect the prompt cache.',
       stickinessTtl: 'Stickiness TTL (min)',
@@ -1546,7 +1549,7 @@ window.__ModuleLoader__.load({
       }
 
       function removeProfile(index) {
-        if (profiles.length <= 1) return
+        if (profiles.length <= 0) return
         editDraft((next) => {
           next.profiles.splice(index, 1)
         })
@@ -1660,6 +1663,9 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'ar-hint' }, t('routesHint')),
                 h('span', { style: S.right }, h('button', { className: 'ar-btn', type: 'button', onClick: addProfile }, `+ ${t('addProfile')}`)),
               ),
+              profiles.length === 0
+                ? h('div', { className: 'ar-empty' }, h('div', { className: 'ar-hint' }, t('noProfiles')))
+                : null,
               profiles.map((item, index) =>
                 h(ProfileCard, {
                   key: index,

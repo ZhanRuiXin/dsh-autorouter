@@ -639,7 +639,7 @@ dsh-autorouter/
 
 1. 把仓库装进 profile：`package.json` 的 `dependencies` 用 `link:<repo>`，并把
    `dsh-autorouter` 追加进 `dsh.profile.bundles`；`node_modules` 里要有指向仓库的
-   junction（本次实测：`C:\Users\ADMIN\.dsh\profiles\desktop\node_modules\dsh-autorouter`）。
+   junction（实测：`<DSH_HOME>/profiles/<profile>/node_modules/dsh-autorouter` → 本仓库）。
 2. 插件的 `package.json` 必须声明它导入的 `@deepseek-ai/*` 包为 `peerDependencies`
    （本包为 `@deepseek-ai/dsh-llm` 与 `@deepseek-ai/schemastery`）。linked bundle
    的导入解析只认 peer：漏声明时进程报
