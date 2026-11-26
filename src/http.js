@@ -57,21 +57,32 @@ export function installRoutes(deps) {
   const { webServer, getConfig, getSettings, getLlm, getState, getSelection, onConfigSaved, logger } = deps
   let catalogCache
 
+  async function providerDirectory(llm) {
+    // The directory method has been named differently across harness builds;
+    // probe the known shapes instead of pinning one and silently listing
+    // nothing on another.
+    for (const method of ['listProviders', 'listProviderDirectory', 'listConfigurableProviders']) {
+      if (typeof llm[method] !== 'function') continue
+      try {
+        const listed = await Promise.resolve(llm[method]())
+        if (Array.isArray(listed)) return listed
+      } catch (error) {
+        logger?.debug?.(`llm-autorouter: ${method} failed: ${error.message}`)
+      }
+    }
+    return []
+  }
+
   async function buildCatalog(force = false) {
     const now = Date.now()
     if (!force && catalogCache !== undefined && now - catalogCache.at < 30_000) return catalogCache.value
     const llm = getLlm()
     if (llm === undefined) return { at: now, providers: [] }
-    let listed = []
-    try {
-      listed = await Promise.resolve(llm.listProviders())
-    } catch (error) {
-      logger?.debug?.(`llm-autorouter: listProviders failed: ${error.message}`)
-    }
+    const listed = await providerDirectory(llm)
     const providers = await Promise.all(
-      (Array.isArray(listed) ? listed : []).map(async (provider) => {
-        const id = typeof provider?.id === 'string' ? provider.id : undefined
-        if (id === undefined || id === PROVIDER_ID) return undefined
+      listed.map(async (provider) => {
+        const id = typeof provider?.id === 'string' ? provider.id : provider?.provider
+        if (typeof id !== 'string' || id === '' || id === PROVIDER_ID) return undefined
         let models = []
         try {
           models = await Promise.resolve(llm.listModels(id))
@@ -80,7 +91,7 @@ export function installRoutes(deps) {
         }
         return {
           id,
-          name: typeof provider.name === 'string' ? provider.name : id,
+          name: typeof provider.name === 'string' ? provider.name : typeof provider.displayName === 'string' ? provider.displayName : id,
           models: (Array.isArray(models) ? models : [])
             .map((model) => ({
               id: model.id,
@@ -169,7 +180,7 @@ export function installRoutes(deps) {
           return json(res, 409, {
             error: 'revision conflict: the config was saved somewhere else',
             revision: descriptor.revision,
-            config: redact(normalizeConfig(descriptor.value ?? current)),
+            config: redact(normalizeConfig(descriptor.value ?? current, { fallback: current })),
           })
         }
         try {
