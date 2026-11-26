@@ -198,6 +198,8 @@ window.__ModuleLoader__.load({
       jsonError: 'JSON 解析失败',
       status: '实时状态',
       stats: '尝试 / 成功 / 失败 / 切换',
+    hostVersionHint: '页面与新宿主一致；版本不一致说明宿主还没重启',
+    hostVersionUnknown: '宿主没有报告版本，说明运行的还是旧代码',
       lastRoute: '最近路由',
       noSessions: '当前没有固定会话',
       session: '会话',
@@ -317,6 +319,8 @@ window.__ModuleLoader__.load({
       jsonError: 'JSON parse failed',
       status: 'Live status',
       stats: 'attempts / successes / failures / switches',
+    hostVersionHint: 'page and host agree; a mismatch means the host was not restarted',
+    hostVersionUnknown: 'the host reports no version, so it is still running the old code',
       lastRoute: 'Last route',
       noSessions: 'No pinned sessions',
       session: 'Session',
@@ -1708,6 +1712,9 @@ window.__ModuleLoader__.load({
                   stats.lastRoute ? ` · ${t('lastRoute')}: ${stats.lastRoute}` : '',
                 ),
                 stats.lastError ? h('div', { className: 'ar-hint', style: { color: '#e5484d' } }, stats.lastError) : null,
+                status?.version
+                  ? h('div', { className: 'ar-hint' }, `host v${status.version} · ${t('hostVersionHint')}`)
+                  : h('div', { className: 'ar-hint' }, t('hostVersionUnknown')),
                 h(
                   'div',
                   { style: S.tableWrap },

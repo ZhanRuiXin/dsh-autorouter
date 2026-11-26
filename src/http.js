@@ -54,7 +54,7 @@ function redact(config) {
 }
 
 export function installRoutes(deps) {
-  const { webServer, getConfig, getSettings, getLlm, getState, getSelection, onConfigSaved, onConfigWritten, logger } = deps
+  const { webServer, version, getConfig, getSettings, getLlm, getState, getSelection, onConfigSaved, onConfigWritten, logger } = deps
   let catalogCache
 
   async function providerDirectory(llm) {
@@ -128,7 +128,7 @@ export function installRoutes(deps) {
           providerId: PROVIDER_ID,
           revision: descriptor?.revision,
           config: redact(config),
-          status: state.snapshot(config, Date.now()),
+          status: { ...state.snapshot(config, Date.now()), version },
         })
       },
     },

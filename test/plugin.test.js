@@ -213,6 +213,7 @@ test('state and config handlers are well formed, and a stale revision is refused
   assert.equal(state.body.config.service.token, '')
   assert.equal(state.body.config.service.hasToken, false)
   assert.equal(state.body.status.routes.length, 3)
+  assert.match(state.body.status.version, /^\d+\.\d+\.\d+$/, 'the page must be able to tell which host code is running')
   assert.ok(Array.isArray(state.body.status.sessions))
 
   const stale = await call(harness, '/api/autorouter/config', {

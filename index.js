@@ -210,6 +210,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
   ctx.inject(['webServer'], (serviceContext) =>
     installRoutes({
       webServer: serviceContext.webServer,
+      version: VERSION,
       getConfig,
       getSettings: () => settings,
       getLlm,
