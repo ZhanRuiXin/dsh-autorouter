@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "AutoRouter",
+    "description": "One virtual provider over the models you already registered: route each request along a fallback chain, switch only before the first output chunk, and carry per-route quota, cooldown and reasoning effort.",
+    "detail": "README.md"
+  }
+}

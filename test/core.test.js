@@ -1,0 +1,249 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
+import { mapEffort, unionEfforts } from '../src/router/effort.js'
+import { classifyFailure } from '../src/router/classify.js'
+import { resolveProfileInfo, toModelInfo } from '../src/router/model-info.js'
+import { orderCandidates } from '../src/router/select.js'
+import { RouterState } from '../src/state.js'
+
+const NOW = 1_760_000_000_000
+
+function profileOf(raw, index = 0) {
+  return normalizeConfig(raw).profiles[index]
+}
+
+test('normalizeConfig fills defaults and bounds numbers', () => {
+  const config = normalizeConfig({})
+  assert.equal(config.enabled, true)
+  assert.equal(config.profiles.length, 1)
+  const profile = config.profiles[0]
+  assert.equal(profile.id, 'auto')
+  assert.equal(profile.name, 'Auto')
+  assert.equal(profile.chain.length, 3)
+  assert.equal(profile.policy.maxSwitches, 8)
+  assert.equal(profile.policy.effortPolicy, 'clamp')
+
+  const bounded = normalizeConfig({
+    profiles: [{ id: 'p', chain: [], policy: { maxSwitches: 999, cooldownMs: -5, stickinessTtlMs: 1, defaultContextWindow: 10 } }],
+  }).profiles[0]
+  assert.equal(bounded.policy.maxSwitches, 32)
+  assert.equal(bounded.policy.cooldownMs, 0)
+  assert.equal(bounded.policy.stickinessTtlMs, 60_000)
+  assert.equal(bounded.policy.defaultContextWindow, 8_000)
+})
+
+test('normalizeConfig drops invalid and self-referential entries', () => {
+  const profile = profileOf({
+    profiles: [
+      {
+        id: 'p',
+        chain: [
+          { provider: 'autorouter', model: 'auto' },
+          { provider: 'a', model: '' },
+          { provider: 'a', model: 'm' },
+          { provider: 'a', model: 'm' },
+        ],
+      },
+    ],
+  })
+  assert.equal(profile.chain.length, 1)
+  assert.equal(entryKey(profile.chain[0]), 'a/m')
+})
+
+test('the same upstream route may appear in two profiles', () => {
+  const config = normalizeConfig({
+    profiles: [
+      { id: 'p1', chain: [{ provider: 'a', model: 'm' }] },
+      { id: 'p2', chain: [{ provider: 'a', model: 'm' }] },
+    ],
+  })
+  assert.equal(config.profiles[0].chain.length, 1)
+  assert.equal(config.profiles[1].chain.length, 1)
+})
+
+test('resolveProfile resolves ids and aliases', () => {
+  const config = normalizeConfig({ profiles: [{ id: 'auto', aliases: ['default', 'flash'], chain: [] }] })
+  assert.equal(resolveProfile(config, 'auto').id, 'auto')
+  assert.equal(resolveProfile(config, 'flash').id, 'auto')
+  assert.equal(resolveProfile(config, 'nope'), undefined)
+})
+
+test('windowIndexFor aligns fixed windows to the local offset', () => {
+  const day = 24 * 60 * 60 * 1000
+  const before = windowIndexFor(NOW, day, 480)
+  const after = windowIndexFor(NOW + day, day, 480)
+  assert.equal(after - before, 1)
+})
+
+test('unionEfforts merges, sorts and keeps a valid default', () => {
+  const union = unionEfforts([
+    { efforts: [{ id: 'high' }, { id: 'low', name: 'Low' }] },
+    { efforts: [{ id: 'max' }], defaultEffort: 'max' },
+    undefined,
+  ])
+  assert.deepEqual(union.efforts.map((effort) => effort.id), ['low', 'high', 'max'])
+  assert.equal(union.efforts[0].name, 'Low')
+  assert.equal(union.defaultEffort, 'max')
+  assert.equal(unionEfforts([{}, { efforts: undefined }]), undefined)
+})
+
+const TARGET = { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' }
+
+test('mapEffort inherits, maps, drops and clamps', () => {
+  assert.equal(mapEffort(undefined, TARGET).effort, undefined)
+  assert.equal(mapEffort('high', TARGET).effort, 'high')
+  assert.equal(mapEffort('max', TARGET).effort, 'low')
+  assert.equal(mapEffort('max', TARGET).coerced, true)
+  assert.equal(mapEffort('max', TARGET, { max: 'high' }).effort, 'high')
+  assert.equal(mapEffort('max', TARGET, { max: null }).effort, undefined)
+  assert.equal(mapEffort('max', undefined).effort, 'max')
+  assert.equal(mapEffort('max', { efforts: [] }).effort, undefined)
+})
+
+test('mapEffort can fail instead of clamping', () => {
+  const verdict = mapEffort('max', TARGET, {}, { effortPolicy: 'fail' })
+  assert.equal(verdict.error.code, 'UNSUPPORTED_REASONING_EFFORT')
+  assert.equal(verdict.effort, undefined)
+})
+
+const POLICY = normalizeConfig({}).profiles[0].policy
+
+test('classifyFailure uses trigger codes and statuses', () => {
+  assert.equal(classifyFailure({ code: 'QUOTA', status: 429 }, POLICY).retryable, true)
+  assert.equal(classifyFailure({ status: 503 }, POLICY).retryable, true)
+  assert.equal(classifyFailure({ code: 'MISSING_CREDENTIAL' }, POLICY).retryable, true)
+  assert.equal(classifyFailure({ message: 'fetch failed' }, POLICY).code, 'NETWORK_ERROR')
+  assert.equal(classifyFailure({ message: 'fetch failed' }, POLICY).retryable, true)
+})
+
+test('classifyFailure relabels auth and respects commit', () => {
+  const auth = classifyFailure({ status: 401, message: 'bad token' }, POLICY)
+  assert.equal(auth.code, 'AUTH')
+  assert.equal(auth.authish, true)
+  assert.equal(auth.retryable, true)
+  assert.equal(classifyFailure({ code: 'QUOTA' }, POLICY, { alreadyCommitted: true }).retryable, false)
+})
+
+test('classifyFailure marks request-scoped failures without booking them', () => {
+  const verdict = classifyFailure({ code: 'CONTEXT_WINDOW_EXCEEDED' }, POLICY)
+  assert.equal(verdict.requestScoped, true)
+  assert.equal(verdict.retryable, false)
+})
+
+test('retry-after is honored only when enabled', () => {
+  assert.equal(classifyFailure({ providerRetryAfterMs: 5000 }, POLICY).retryAfterMs, 5000)
+  const off = { ...POLICY, honorRetryAfter: false }
+  assert.equal(classifyFailure({ providerRetryAfterMs: 5000 }, off).retryAfterMs, undefined)
+})
+
+test('resolveProfileInfo intersects capabilities conservatively', async () => {
+  const profile = profileOf({
+    profiles: [{ id: 'p', chain: [{ provider: 'a', model: 'm' }, { provider: 'b', model: 'n' }] }],
+  })
+  const infos = {
+    'a/m': {
+      inputModalities: ['text', 'image'],
+      context: { contextWindow: 100_000 },
+      defaultMaxTokens: 8000,
+      reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' },
+      toolUpdate: 'addition-only',
+    },
+    'b/n': {
+      inputModalities: ['text'],
+      context: { contextWindow: 200_000 },
+      reasoning: { efforts: [{ id: 'max' }] },
+      toolUpdate: 'in-history',
+    },
+  }
+  const resolved = await resolveProfileInfo(profile, async (provider, model) => infos[`${provider}/${model}`], profile.policy)
+  assert.deepEqual(resolved.inputModalities, ['text'])
+  assert.equal(resolved.context.contextWindow, 100_000)
+  assert.equal(resolved.defaultMaxTokens, 8000)
+  assert.equal(resolved.reasoning.defaultEffort, 'low')
+  assert.deepEqual(resolved.reasoning.efforts.map((effort) => effort.id), ['low', 'high', 'max'])
+  assert.equal(resolved.toolUpdate, 'addition-only')
+  assert.equal(resolved.systemPromptUpdate, 'in-history')
+
+  const info = toModelInfo('autorouter', profile, resolved)
+  assert.equal(info.provider, 'autorouter')
+  assert.equal(info.id, 'p')
+  assert.equal(info.entryCount, undefined)
+  assert.equal(info.resolvedCount, undefined)
+  assert.equal(info.reasoning.defaultEffort, 'low')
+})
+
+test('resolveProfileInfo falls back when the target is unknown', async () => {
+  const profile = profileOf({ profiles: [{ id: 'p', chain: [{ provider: 'a', model: 'm' }] }] })
+  const resolved = await resolveProfileInfo(profile, async () => undefined, profile.policy)
+  assert.deepEqual(resolved.inputModalities, ['text'])
+  assert.equal(resolved.context.contextWindow, 128_000)
+  assert.equal(resolved.reasoning, undefined)
+  assert.equal(resolved.toolUpdate, 'in-history')
+})
+
+function selectFixture() {
+  const profile = profileOf({
+    profiles: [
+      {
+        id: 'p',
+        chain: [
+          { id: 'a', provider: 'a', model: 'm', qualityHint: 90, costHint: 80 },
+          { id: 'b', provider: 'b', model: 'n', qualityHint: 10, costHint: 10 },
+        ],
+      },
+    ],
+  })
+  return profile
+}
+
+test('orderCandidates respects quality and efficiency modes', () => {
+  const state = new RouterState({ now: () => NOW })
+  const quality = selectFixture()
+  quality.policy.mode = 'quality'
+  assert.deepEqual(orderCandidates({ profile: quality, state, now: NOW }).order, ['a/m', 'b/n'])
+
+  const efficiency = selectFixture()
+  efficiency.policy.mode = 'efficiency'
+  assert.deepEqual(orderCandidates({ profile: efficiency, state, now: NOW }).order, ['b/n', 'a/m'])
+})
+
+test('orderCandidates excludes cooling and exhausted routes', () => {
+  const state = new RouterState({ now: () => NOW })
+  const profile = selectFixture()
+  profile.policy.mode = 'quality'
+
+  state.suppress('a/m', 60_000, NOW)
+  const cooling = orderCandidates({ profile, state, now: NOW })
+  assert.deepEqual(cooling.order, ['b/n'])
+  assert.equal(cooling.blocked[0].reason, 'cooldown')
+
+  const state2 = new RouterState({ now: () => NOW })
+  const budgeted = selectFixture()
+  budgeted.policy.mode = 'quality'
+  budgeted.chain[0].maxRequestsPerWindow = 1
+  state2.noteAttempt('a/m', budgeted.chain[0], NOW)
+  const exhausted = orderCandidates({ profile: budgeted, state: state2, now: NOW })
+  assert.deepEqual(exhausted.order, ['b/n'])
+  assert.equal(exhausted.blocked[0].reason, 'budget')
+  assert.ok(exhausted.blocked[0].resetInMs > 0)
+})
+
+test('sticky sessions win over the ordering mode', () => {
+  const state = new RouterState({ now: () => NOW })
+  const profile = selectFixture()
+  profile.policy.mode = 'quality'
+  state.pin('session-1', 'p', 'b/n', NOW)
+  const selection = orderCandidates({ profile, state, now: NOW, sessionId: 'session-1' })
+  assert.equal(selection.sticky, true)
+  assert.deepEqual(selection.order, ['b/n', 'a/m'])
+})
+
+test('a time window reorders the chain', () => {
+  const state = new RouterState({ now: () => NOW })
+  const profile = selectFixture()
+  profile.policy.mode = 'quality'
+  profile.policy.timeWindows = [{ id: 'w', label: 'w', from: 0, to: 1439, utcOffsetMinutes: 480, order: ['b'] }]
+  assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
+})

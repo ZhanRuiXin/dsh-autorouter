@@ -1,0 +1,13 @@
+# The dsh-autorouter profile-bundle patch: ONE plugin row added over the
+# profile's bundle stack (`dsh.profile.bundles` order, later layers win per
+# row). The plugin needs the `llm`, `settings` and `webServer` services, which
+# dsh-base already provides, so its position after the base bundles is enough.
+#
+# A patch replaces the targeted row's whole `config` rather than merging into
+# it. This row ships neutral defaults (`normalizeConfig` fills the rest); the
+# profile-layer `cordis.patch.yml` override wins and is what the Settings page
+# writes through `settings.replace`.
+- insert:
+    - id: llm-autorouter
+      name: 'dsh-autorouter'
+      config: {}
