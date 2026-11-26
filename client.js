@@ -155,6 +155,10 @@ window.__ModuleLoader__.load({
       noWindows: '未设置时段，始终按链顺序尝试。',
       windowLabel: '名称',
       windowOrderHint: '本时段的回退顺序',
+      addRange: '时间段',
+      removeRange: '删除这个时间段',
+      removeWindow: '删除时段',
+      rangeHint: '同一时段可以有多个不连续的时间段，命中任意一段都算。',
       defaultOrder: '默认顺序',
       orderTabHint: '正在编辑该时段的回退顺序：上下箭头只改这个时段，未列出的路由仍然排在最后兜底。',
       orderEditHint: '在「回退链」上方的时段按钮里调整顺序。',
@@ -270,6 +274,10 @@ window.__ModuleLoader__.load({
       noWindows: 'No windows configured; the chain order always applies.',
       windowLabel: 'Label',
       windowOrderHint: 'Fallback order in this window',
+      addRange: 'Segment',
+      removeRange: 'Remove this segment',
+      removeWindow: 'Remove window',
+      rangeHint: 'One window may cover several disjoint stretches; any of them keeps it active.',
       defaultOrder: 'Default order',
       orderTabHint: 'Editing this window’s own fallback order: the arrows change this window only, and routes it omits still run last.',
       orderEditHint: 'Reorder it from the window buttons above the chain.',
@@ -347,13 +355,35 @@ window.__ModuleLoader__.load({
     }
 
     /** Same rule as the host: `from === to` means all day, wrap-around included. */
+    function rangeMatches(range, minutes) {
+      const from = clockToMinutes(range.from)
+      const to = clockToMinutes(range.to)
+      if (from === to) return true
+      return from < to ? minutes >= from && minutes < to : minutes >= from || minutes < to
+    }
+
+    /**
+     * A window may be spread over several disjoint stretches (e.g. 00:30–08:30
+     * and 22:00–23:30); it is active when any of them matches.
+     */
     function windowMatches(window, utcOffsetMinutes) {
       const shifted = new Date(Date.now() + (utcOffsetMinutes ?? 480) * 60_000)
       const minutes = shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
-      const from = clockToMinutes(window.from)
-      const to = clockToMinutes(window.to)
-      if (from === to) return true
-      return from < to ? minutes >= from && minutes < to : minutes >= from || minutes < to
+      const ranges = Array.isArray(window.ranges) ? window.ranges : [{ from: window.from, to: window.to }]
+      return ranges.some((range) => rangeMatches(range, minutes))
+    }
+
+    /** `00:30–08:30`, or `00:30–08:30 · 22:00–23:30` for a multi-range window. */
+    function windowCaption(window) {
+      if (typeof window.label === 'string' && window.label.trim() !== '') return window.label.trim()
+      const ranges = Array.isArray(window.ranges) ? window.ranges : [{ from: window.from, to: window.to }]
+      return ranges.map((range) => `${minutesToClock(range.from)}–${minutesToClock(range.to)}`).join(' · ')
+    }
+
+    /** The window's ranges, normalized for editing, including the legacy shape. */
+    function windowRanges(window) {
+      const ranges = Array.isArray(window.ranges) ? window.ranges : [{ from: window.from, to: window.to }]
+      return ranges.map((range) => ({ from: minutesToClock(range.from) || '00:00', to: minutesToClock(range.to) || '00:00' }))
     }
 
     /**
@@ -866,8 +896,10 @@ window.__ModuleLoader__.load({
               t('defaultOrder'),
             ),
             windows.map((window, at) => {
-              const label = window.label || `${minutesToClock(window.from)}–${minutesToClock(window.to)}`
-              const range = `${minutesToClock(window.from)} → ${minutesToClock(window.to)}`
+              const caption = windowCaption(window)
+              const range = windowRanges(window)
+                .map((item) => `${item.from} → ${item.to}`)
+                .join(' · ')
               return h(
                 'button',
                 {
@@ -877,7 +909,7 @@ window.__ModuleLoader__.load({
                   title: range,
                   onClick: () => setOrderTab(window.id),
                 },
-                windowMatches(window, policy.utcOffsetMinutes) ? `● ${label}` : label,
+                windowMatches(window, policy.utcOffsetMinutes) ? `● ${caption}` : caption,
               )
             }),
           ),
@@ -1172,17 +1204,50 @@ window.__ModuleLoader__.load({
         return entry === undefined || entry === null ? key : `${entry.provider}/${entry.model}`
       }
       const edit = (index, patch) => onChange(windows.map((item, at) => (at === index ? { ...item, ...patch } : item)))
+      const editRange = (index, rangeIndex, patch) =>
+        edit(index, {
+          ranges: windowRanges(windows[index]).map((range, at) => (at === rangeIndex ? { ...range, ...patch } : range)),
+        })
+      const addRange = (index) => {
+        const ranges = windowRanges(windows[index])
+        edit(index, { ranges: [...ranges, { from: '00:00', to: '08:30' }] })
+      }
+      const removeRange = (index, rangeIndex) => {
+        const ranges = windowRanges(windows[index]).filter((_, at) => at !== rangeIndex)
+        // A window without a stretch of the day can never match, so the last
+        // range stays until the whole window is removed.
+        if (ranges.length === 0) return
+        edit(index, { ranges })
+      }
       // A new window starts as a copy of the configured chain, so it is a
       // complete fallback chain from the first moment and can be reordered.
       const add = () =>
-        onChange([...windows, { id: `window-${windows.length + 1}`, label: '', from: '00:00', to: '08:30', order: [...routes] }])
+        onChange([
+          ...windows,
+          {
+            id: `window-${windows.length + 1}`,
+            label: '',
+            ranges: [{ from: '00:00', to: '08:30' }],
+            order: [...routes],
+          },
+        ])
       const remove = (index) => onChange(windows.filter((_, at) => at !== index))
       const preset = () => {
         const official = routes.filter((key) => key.startsWith('deepseek-account/'))
         const others = routes.filter((key) => !official.includes(key))
         onChange([
-          { id: 'deepseek-offpeak', label: 'DeepSeek 低谷', from: '00:30', to: '08:30', order: [...official, ...others] },
-          { id: 'deepseek-peak', label: 'DeepSeek 标准', from: '08:30', to: '00:30', order: [...others, ...official] },
+          {
+            id: 'deepseek-offpeak',
+            label: 'DeepSeek 低谷',
+            ranges: [{ from: '00:30', to: '08:30' }],
+            order: [...official, ...others],
+          },
+          {
+            id: 'deepseek-peak',
+            label: 'DeepSeek 标准',
+            ranges: [{ from: '08:30', to: '00:30' }],
+            order: [...others, ...official],
+          },
         ])
       }
 
@@ -1206,6 +1271,7 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'ar-muted' }, t('noWindows'))
           : windows.map((window, index) => {
               const ordered = orderByKeys(chain ?? [], window.order)
+              const ranges = windowRanges(window)
               return h(
                 'div',
                 { key: window.id ?? index, className: 'ar-window' },
@@ -1218,20 +1284,49 @@ window.__ModuleLoader__.load({
                     placeholder: t('windowLabel'),
                     onChange: (event) => edit(index, { label: event.target.value }),
                   }),
-                  h('input', {
-                    className: 'ar-input num',
-                    type: 'time',
-                    value: minutesToClock(window.from),
-                    onChange: (event) => edit(index, { from: event.target.value }),
-                  }),
-                  h('span', { className: 'ar-muted' }, '→'),
-                  h('input', {
-                    className: 'ar-input num',
-                    type: 'time',
-                    value: minutesToClock(window.to),
-                    onChange: (event) => edit(index, { to: event.target.value }),
-                  }),
-                  h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => remove(index) }, '✕'),
+                  h(
+                    'button',
+                    { className: 'ar-btn tiny danger', type: 'button', onClick: () => remove(index) },
+                    t('removeWindow'),
+                  ),
+                ),
+                // One named window, several stretches of the day: 00:30–08:30
+                // and 22:00–23:30 are the same fallback chain.
+                ranges.map((range, rangeIndex) =>
+                  h(
+                    'div',
+                    { key: rangeIndex, className: 'ar-row' },
+                    h('input', {
+                      className: 'ar-input num',
+                      type: 'time',
+                      value: range.from,
+                      onChange: (event) => editRange(index, rangeIndex, { from: event.target.value }),
+                    }),
+                    h('span', { className: 'ar-muted' }, '→'),
+                    h('input', {
+                      className: 'ar-input num',
+                      type: 'time',
+                      value: range.to,
+                      onChange: (event) => editRange(index, rangeIndex, { to: event.target.value }),
+                    }),
+                    h(
+                      'button',
+                      {
+                        className: 'ar-btn tiny',
+                        type: 'button',
+                        title: t('removeRange'),
+                        disabled: ranges.length <= 1,
+                        onClick: () => removeRange(index, rangeIndex),
+                      },
+                      '✕',
+                    ),
+                  ),
+                ),
+                h(
+                  'div',
+                  { className: 'ar-row' },
+                  h('button', { className: 'ar-btn tiny', type: 'button', onClick: () => addRange(index) }, `+ ${t('addRange')}`),
+                  h('span', { className: 'ar-muted' }, t('rangeHint')),
                 ),
                 // Read-only here on purpose: the order is edited on the chain
                 // itself, in the tab this window owns.

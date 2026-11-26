@@ -157,17 +157,28 @@ export function parseClock(value) {
   return hours * 60 + minutes
 }
 
-function normalizeTimeWindow(raw, index) {
+function normalizeRange(raw) {
   if (!isObject(raw)) return undefined
   const from = parseClock(raw.from)
   const to = parseClock(raw.to)
   if (from === undefined || to === undefined) return undefined
+  return { from, to }
+}
+
+function normalizeTimeWindow(raw, index) {
+  if (!isObject(raw)) return undefined
+  // One named window = one fallback chain, but it may be spread over several
+  // disjoint stretches of the day (e.g. 00:30–08:30 and 22:00–23:30). A config
+  // still written as a single `{ from, to }` pair is folded into a one-range
+  // list, so old files load unchanged.
+  const source = Array.isArray(raw.ranges) ? raw.ranges : [{ from: raw.from, to: raw.to }]
+  const ranges = source.map(normalizeRange).filter((item) => item !== undefined)
+  if (ranges.length === 0) return undefined
   const id = text(raw.id, `window-${index + 1}`)
   return {
     id,
     label: text(raw.label, id),
-    from,
-    to,
+    ranges,
     utcOffsetMinutes: finiteNumber(raw.utcOffsetMinutes, DEFAULT_POLICY.utcOffsetMinutes, { min: -720, max: 840 }),
     order: Array.isArray(raw.order)
       ? raw.order.filter((item) => typeof item === 'string' && item.trim() !== '').map((item) => item.trim())
@@ -338,9 +349,18 @@ export function localMinutes(now, utcOffsetMinutes) {
 
 export function timeWindowMatches(window, now, utcOffsetMinutes = window.utcOffsetMinutes ?? 0) {
   const minutes = localMinutes(now, utcOffsetMinutes)
-  if (window.from === window.to) return true
-  if (window.from < window.to) return minutes >= window.from && minutes < window.to
-  return minutes >= window.from || minutes < window.to
+  // A window may cover several disjoint stretches of the day. A stored window
+  // that still carries a single `{ from, to }` pair is read the same way, so
+  // configs written before ranges existed keep matching.
+  const ranges = Array.isArray(window.ranges) ? window.ranges : [{ from: window.from, to: window.to }]
+  return ranges.some((range) => {
+    const from = Number(range.from)
+    const to = Number(range.to)
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return false
+    if (from === to) return true
+    if (from < to) return minutes >= from && minutes < to
+    return minutes >= from || minutes < to
+  })
 }
 
 /** The first matching time window in config order, or `undefined`. */

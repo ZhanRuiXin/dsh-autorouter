@@ -110,7 +110,9 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
     "policy": { "maxSwitches": 8, "cooldownMs": 300000, "sticky": true,
                 "effortPolicy": "clamp", "contextPolicy": "min",
                 "timeWindows": [
-                  { "id": "offpeak", "label": "低谷", "from": "00:30", "to": "08:30",
+                  { "id": "offpeak", "label": "低谷",
+                    "ranges": [{ "from": "00:30", "to": "08:30" },
+                               { "from": "22:00", "to": "23:30" }],
                     "order": ["deepseek-account/deepseek-flash"] }
                 ] },
     "chain": [
@@ -133,6 +135,9 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 
 **时间段**不改路由集合，只换顺序：命中当前本地时间（默认 UTC+8）的窗口有**自己的一条回退链**
 （保存的是路由键列表 `order`，就是完整顺序），未列出的路由保持配置顺序排在最后兜底。
+一个时段可以覆盖多个**不连续**的时间段（`ranges`，例如 00:30–08:30 加 22:00–23:30），
+命中任意一段都算命中，它们共用同一条链；旧配置里单个 `{ from, to }` 会被自动折算成一段，
+不需要迁移。
 设置页在路由链卡片顶部用时段按钮切换要编辑的那条链，所以「不同时段用不同回退链」就是
 在这几个按钮之间切换后调顺序。设置页还提供「DeepSeek 峰谷」一键预设：
 00:30–08:30 让 `deepseek-account/*` 优先，08:30–00:30 让其余路由优先。

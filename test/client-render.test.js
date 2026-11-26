@@ -64,7 +64,18 @@ const CONFIG = {
         defaultContextWindow: 128000,
         triggerCodes: ['AUTH', 'QUOTA'],
         triggerStatuses: [429],
-        timeWindows: [{ id: 'w', label: '谷时', from: 30, to: 510, order: ['deepseek-account/deepseek-flash'] }],
+        timeWindows: [
+      {
+        id: 'w',
+        label: '谷时',
+        // One named window over two disjoint stretches of the day.
+        ranges: [
+          { from: 30, to: 510 },
+          { from: 1320, to: 1410 },
+        ],
+        order: ['deepseek-account/deepseek-flash'],
+      },
+    ],
       },
     },
   ],
@@ -478,9 +489,11 @@ test('the time windows and the policy live inside the profile card', () => {
 
   const inputs = findAll(card, (node) => node.type === 'input')
   const timeInputs = inputs.filter((node) => node.props.type === 'time')
-  assert.equal(timeInputs.length, 2, 'from/to clock fields for the one window')
-  assert.equal(timeInputs[0].props.value, '00:30')
-  assert.equal(timeInputs[1].props.value, '08:30')
+  assert.deepEqual(
+    timeInputs.map((node) => node.props.value),
+    ['00:30', '08:30', '22:00', '23:30'],
+    'one from/to pair per stretch of the one window',
+  )
   assert.ok(
     inputs.some((node) => node.props.value === '谷时'),
     'the window label is editable',

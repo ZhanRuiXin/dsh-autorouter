@@ -230,11 +230,32 @@ test('sticky sessions win over the chain order', () => {
   assert.deepEqual(selection.order, ['b/n', 'a/m'])
 })
 
+test('one window may span several disjoint stretches of the day', () => {
+  const state = new RouterState({ now: () => NOW })
+  const profile = selectFixture()
+  // 16:00-18:00 and 22:00-23:30 local, one chain. NOW (16:53) is in the first
+  // stretch only, and NOW + 4h (20:53) falls in the gap between them.
+  profile.policy.timeWindows = [
+    {
+      id: 'w',
+      label: 'w',
+      ranges: [{ from: 960, to: 1080 }, { from: 1320, to: 1410 }],
+      utcOffsetMinutes: 480,
+      order: ['b/n'],
+    },
+  ]
+  assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
+
+  const outside = NOW + 4 * 3600_000
+  assert.deepEqual(orderCandidates({ profile, state, now: outside }).order, ['a/m', 'b/n'])
+})
+
 test('a time window reorders the chain', () => {
   const state = new RouterState({ now: () => NOW })
   const profile = selectFixture()
-  profile.policy.mode = 'quality'
-  profile.policy.timeWindows = [{ id: 'w', label: 'w', from: 0, to: 1439, utcOffsetMinutes: 480, order: ['b'] }]
+  profile.policy.timeWindows = [
+    { id: 'w', label: 'w', ranges: [{ from: 0, to: 1439 }], utcOffsetMinutes: 480, order: ['b'] },
+  ]
   assert.deepEqual(orderCandidates({ profile, state, now: NOW }).order, ['b/n', 'a/m'])
 })
 
@@ -243,7 +264,7 @@ test('a time window carries a whole fallback chain, not just a hint', () => {
   const profile = selectFixture()
   profile.chain.push({ id: 'c/p', enabled: true, provider: 'c', model: 'p', cooldownMs: 300000, effortMap: {} })
   profile.policy.timeWindows = [
-    { id: 'w', label: 'w', from: 0, to: 1439, utcOffsetMinutes: 480, order: ['c/p', 'b/n'] },
+    { id: 'w', label: 'w', ranges: [{ from: 0, to: 1439 }], utcOffsetMinutes: 480, order: ['c/p', 'b/n'] },
   ]
   // A full permutation: the window decides the entire order, and a route it
   // leaves out still runs last instead of disappearing.
