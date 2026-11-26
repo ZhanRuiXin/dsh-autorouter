@@ -34,6 +34,10 @@ window.__ModuleLoader__.load({
 .ar-btn.tiny{padding:1px 7px;font-size:11px;border-radius:5px}
 .ar-card{border:1px solid rgba(128,128,128,.22);border-radius:10px;padding:11px 12px;background:rgba(128,128,128,.035);display:flex;flex-direction:column;gap:9px}
 .ar-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ar-card-body{display:flex;flex-direction:column;gap:9px}
+.ar-chevron{all:unset;cursor:pointer;width:13px;flex:0 0 auto;text-align:center;font-size:11px;line-height:1;opacity:.70}
+.ar-chevron:hover{opacity:1}
+.ar-chevron:focus-visible{outline:2px solid rgba(59,130,246,.60);border-radius:4px}
 .ar-card-title{font-weight:600;font-size:13px}
 .ar-muted{opacity:.60}
 .ar-hint{opacity:.55;font-size:11.5px}
@@ -108,16 +112,12 @@ window.__ModuleLoader__.load({
       profileDisabled: '已停用',
       profileEmpty: '空链',
       chain: '回退顺序',
-      chainHint: '从上到下依次尝试；勾选控制是否参与。每行可设置冷却与请求额度，顺序即优先级。',
+      chainHint: '从上到下依次尝试；勾选控制是否参与。顺序即优先级，冷却中的路由会被跳过。',
       addRoute: '添加路由',
       add: '添加',
       provider: 'Provider',
       model: 'Model',
       cooldownMin: '冷却（分钟）',
-      budgetReq: '请求额度',
-      budgetWin: '额度窗口（小时）',
-      budgetWinHint: '按本地时间对齐的固定窗口，到点自动归零。',
-      budgetHint: '0 = 不限；窗口内达到上限就跳过该路由。',
       effortMap: '思考强度映射',
       effortInherit: '继承',
       effortDrop: '丢弃',
@@ -132,6 +132,8 @@ window.__ModuleLoader__.load({
       timeWindows: '时间段',
       addWindow: '添加时段',
       presetDeepSeek: 'DeepSeek 峰谷',
+      collapseCard: '收起',
+      expandCard: '展开',
       timeWindowHint: '只重排尝试顺序，不过滤；order 里的 route 先试，其余保持链上的相对顺序。',
       noWindows: '未设置时段，始终按链顺序尝试。',
       windowLabel: '名称',
@@ -178,12 +180,9 @@ window.__ModuleLoader__.load({
       health: '健康',
       cooling: '冷却中',
       cooled: '冷却',
-      exhausted: '额度用尽',
       healthy: '正常',
       failures: '失败',
-      requests: '请求',
       tokens: 'Token',
-      resetIn: '重置',
       clearCooldown: '清除冷却',
       clearAll: '全部清除',
       refresh: '刷新',
@@ -222,16 +221,12 @@ window.__ModuleLoader__.load({
       profileDisabled: 'disabled',
       profileEmpty: 'empty',
       chain: 'Fallback order',
-      chainHint: 'Tried top to bottom. Check to include. Each row carries a cooldown and a request budget; position is priority.',
+      chainHint: 'Tried top to bottom. Check to include. Position is priority; a cooling route is skipped.',
       addRoute: 'Add route',
       add: 'Add',
       provider: 'Provider',
       model: 'Model',
       cooldownMin: 'Cooldown (min)',
-      budgetReq: 'Request budget',
-      budgetWin: 'Budget window (h)',
-      budgetWinHint: 'Fixed window aligned to local time; counters reset when it rolls over.',
-      budgetHint: '0 = unlimited; the route is skipped once the window budget is spent.',
       effortMap: 'Effort map',
       effortInherit: 'inherit',
       effortDrop: 'drop',
@@ -246,6 +241,8 @@ window.__ModuleLoader__.load({
       timeWindows: 'Time windows',
       addWindow: 'Add window',
       presetDeepSeek: 'DeepSeek peak / off-peak',
+      collapseCard: 'Collapse',
+      expandCard: 'Expand',
       timeWindowHint: 'Reorders attempts only, never filters: listed routes go first, the rest keep their relative chain order.',
       noWindows: 'No windows configured; the chain order always applies.',
       windowLabel: 'Label',
@@ -292,12 +289,9 @@ window.__ModuleLoader__.load({
       health: 'Health',
       cooling: 'cooling',
       cooled: 'cooled',
-      exhausted: 'budget exhausted',
       healthy: 'healthy',
       failures: 'failures',
-      requests: 'requests',
       tokens: 'tokens',
-      resetIn: 'reset',
       clearCooldown: 'Clear cooldown',
       clearAll: 'Clear all',
       refresh: 'Refresh',
@@ -417,6 +411,56 @@ window.__ModuleLoader__.load({
       )
     }
 
+    const COLLAPSE_KEY = 'dsh-autorouter:collapsed'
+
+    function readCollapsed() {
+      try {
+        const raw = window.localStorage?.getItem(COLLAPSE_KEY)
+        const parsed = raw ? JSON.parse(raw) : []
+        return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [])
+      } catch {
+        return new Set()
+      }
+    }
+
+    function writeCollapsed(set) {
+      try {
+        window.localStorage?.setItem(COLLAPSE_KEY, JSON.stringify([...set]))
+      } catch {
+        // A sandboxed frame may refuse storage; collapsing still works per render.
+      }
+    }
+
+    /**
+     * A card with a disclosure chevron. Collapse state lives in the page, so a
+     * profile card keeps its identity by position rather than by its editable id.
+     */
+    function Card({ t, open, onToggle, style, head, actions, children }) {
+      return h(
+        'div',
+        { className: `ar-card${open ? '' : ' collapsed'}`, style },
+        h(
+          'div',
+          { className: 'ar-card-head' },
+          h(
+            'button',
+            {
+              className: 'ar-chevron',
+              type: 'button',
+              'aria-expanded': open,
+              'aria-label': open ? t('collapseCard') : t('expandCard'),
+              title: open ? t('collapseCard') : t('expandCard'),
+              onClick: onToggle,
+            },
+            open ? '▾' : '▸',
+          ),
+          head,
+          actions === undefined || actions === null ? null : h('span', { style: S.right }, actions),
+        ),
+        open ? h('div', { className: 'ar-card-body' }, children) : null,
+      )
+    }
+
     function Toggle(props) {
       return h(
         'label',
@@ -453,7 +497,6 @@ window.__ModuleLoader__.load({
 
     function HealthBadge({ row, t }) {
       const cooling = row.coolingUntil && row.coolingUntil > Date.now()
-      if (row.budget?.exhausted) return h('span', { className: 'ar-badge warn' }, t('exhausted'))
       if (cooling) return h('span', { className: 'ar-badge bad' }, `${t('cooling')} · ${fmtAge(row.coolingUntil - Date.now())}`)
       if (row.failures > 0) return h('span', { className: 'ar-badge warn' }, `${t('failures')} ${row.failures}`)
       return h('span', { className: 'ar-badge ok' }, t('healthy'))
@@ -542,31 +585,6 @@ window.__ModuleLoader__.load({
               onChange: (event) => onChange({ cooldownMs: Math.round(num(event.target.value, 5) * 60000) }),
             }),
           ),
-          h(
-            Field,
-            { label: t('budgetReq'), hint: t('budgetHint') },
-            h('input', {
-              className: 'ar-input num',
-              type: 'number',
-              min: 0,
-              value: entry.maxRequestsPerWindow ?? 0,
-              onChange: (event) => {
-                onChange({ maxRequestsPerWindow: Math.max(0, Math.round(num(event.target.value, 0))) })
-              },
-            }),
-          ),
-          h(
-            Field,
-            { label: t('budgetWin'), hint: t('budgetWinHint') },
-            h('input', {
-              className: 'ar-input num',
-              type: 'number',
-              min: 0,
-              step: 1,
-              value: Math.round((entry.windowMs ?? 86400000) / 3600000),
-              onChange: (event) => onChange({ windowMs: Math.max(0, Math.round(num(event.target.value, 24) * 3600000)) }),
-            }),
-          ),
         ),
         h(
           'details',
@@ -611,32 +629,32 @@ window.__ModuleLoader__.load({
         if (models.length > 0 && !models.some((item) => item.id === model)) setModel(models[0].id)
       }, [provider, catalog])
       return h(
-        'div',
-        { className: 'ar-card', style: selected ? { borderColor: 'rgba(59,130,246,.55)' } : undefined },
-        h(
-          'div',
-          { className: 'ar-card-head' },
-          h('input', {
-            type: 'radio',
-            name: 'autorouter-profile',
-            checked: selected,
-            onChange: () => onSelect(profile.id),
-            title: t('profile'),
-          }),
-          h('span', { className: 'ar-card-title' }, profile.name || profile.id),
-          h('span', { className: 'ar-badge' }, profile.id),
-          !profile.enabled ? h('span', { className: 'ar-badge warn' }, t('profileDisabled')) : null,
-          profile.chain.length === 0 ? h('span', { className: 'ar-badge bad' }, t('profileEmpty')) : null,
-          h(
-            'span',
-            { style: S.right },
-            h(
-              'button',
-              { className: 'ar-btn tiny danger', type: 'button', onClick: () => onRemove(index), disabled: props.profileCount <= 1 },
-              t('removeProfile'),
-            ),
+        Card,
+        {
+          t,
+          open: props.open !== false,
+          onToggle: props.onToggle,
+          style: selected ? { borderColor: 'rgba(59,130,246,.55)' } : undefined,
+          head: [
+            h('input', {
+              key: 'select',
+              type: 'radio',
+              name: 'autorouter-profile',
+              checked: selected,
+              onChange: () => onSelect(profile.id),
+              title: t('profile'),
+            }),
+            h('span', { key: 'title', className: 'ar-card-title' }, profile.name || profile.id),
+            h('span', { key: 'id', className: 'ar-badge' }, profile.id),
+            !profile.enabled ? h('span', { key: 'off', className: 'ar-badge warn' }, t('profileDisabled')) : null,
+            profile.chain.length === 0 ? h('span', { key: 'empty', className: 'ar-badge bad' }, t('profileEmpty')) : null,
+          ],
+          actions: h(
+            'button',
+            { className: 'ar-btn tiny danger', type: 'button', onClick: () => onRemove(index), disabled: props.profileCount <= 1 },
+            t('removeProfile'),
           ),
-        ),
+        },
         h(
           'div',
           { className: 'ar-grid' },
@@ -726,7 +744,19 @@ window.__ModuleLoader__.load({
       const [jsonText, setJsonText] = useState('')
       const [jsonError, setJsonError] = useState('')
       const [scheme, setScheme] = useState(() => detectScheme())
+      const [collapsed, setCollapsed] = useState(() => readCollapsed())
       const alive = useRef(true)
+
+      const toggleCard = (id) => {
+        setCollapsed((previous) => {
+          const next = new Set(previous)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          writeCollapsed(next)
+          return next
+        })
+      }
+      const isOpen = (id) => !collapsed.has(id)
 
       useEffect(() => {
         const sync = () => setScheme(detectScheme())
@@ -948,9 +978,6 @@ window.__ModuleLoader__.load({
             provider,
             model,
             cooldownMs: 300000,
-            maxRequestsPerWindow: 0,
-            maxTokensPerWindow: 0,
-            windowMs: 86400000,
             effortMap: {},
           })
         })
@@ -1072,6 +1099,8 @@ window.__ModuleLoader__.load({
                   key: index,
                   profile: item,
                   index,
+                  open: isOpen(`profile:${index}`),
+                  onToggle: () => toggleCard(`profile:${index}`),
                   selected: item.id === selected,
                   profileCount: profiles.length,
                   t,
@@ -1085,20 +1114,20 @@ window.__ModuleLoader__.load({
                 }),
               ),
               h(
-                'div',
-                { className: 'ar-card' },
-                h(
-                  'div',
-                  { className: 'ar-card-head' },
-                  h('span', { className: 'ar-card-title' }, t('status')),
-                  h('span', { className: 'ar-muted' }, `${routes.length} ${t('routes')}`),
-                  h(
-                    'span',
-                    { style: S.right },
-                    h('button', { className: 'ar-btn tiny', type: 'button', onClick: refreshStatus }, t('refresh')),
-                    h('button', { className: 'ar-btn tiny', type: 'button', onClick: () => clearCooldown() }, t('clearAll')),
-                  ),
-                ),
+                Card,
+                {
+                  t,
+                  open: isOpen('status'),
+                  onToggle: () => toggleCard('status'),
+                  head: [
+                    h('span', { key: 'title', className: 'ar-card-title' }, t('status')),
+                    h('span', { key: 'count', className: 'ar-muted' }, `${routes.length} ${t('routes')}`),
+                  ],
+                  actions: [
+                    h('button', { key: 'refresh', className: 'ar-btn tiny', type: 'button', onClick: refreshStatus }, t('refresh')),
+                    h('button', { key: 'clear', className: 'ar-btn tiny', type: 'button', onClick: () => clearCooldown() }, t('clearAll')),
+                  ],
+                },
                 h(
                   'div',
                   { className: 'ar-hint' },
@@ -1122,8 +1151,6 @@ window.__ModuleLoader__.load({
                         h('th', null, t('provider')),
                         h('th', null, t('model')),
                         h('th', null, t('health')),
-                        h('th', null, t('requests')),
-                        h('th', null, t('resetIn')),
                         h('th', null, ''),
                       ),
                     ),
@@ -1138,14 +1165,6 @@ window.__ModuleLoader__.load({
                           h('td', null, row.provider),
                           h('td', null, row.model),
                           h('td', null, h(HealthBadge, { row, t })),
-                          h(
-                            'td',
-                            null,
-                            row.budget.requestLimit > 0
-                              ? `${row.budget.requests}/${row.budget.requestLimit}`
-                              : `${row.budget.requests}/∞`,
-                          ),
-                          h('td', null, row.budget.requestLimit > 0 ? fmtAge(row.budget.resetInMs) : '—'),
                           h(
                             'td',
                             null,
@@ -1196,8 +1215,13 @@ window.__ModuleLoader__.load({
               ),
               h('div', { className: 'ar-hint' }, t('policyHint')),
               h(
-                'div',
-                { className: 'ar-card' },
+                Card,
+                {
+                  t,
+                  open: isOpen('policy'),
+                  onToggle: () => toggleCard('policy'),
+                  head: h('span', { className: 'ar-card-title' }, t('policy')),
+                },
                 h(
                   'div',
                   { className: 'ar-grid' },
@@ -1385,16 +1409,17 @@ window.__ModuleLoader__.load({
                 ),
               ),
               h(
-                'div',
-                { className: 'ar-card' },
-                h(
-                  'div',
-                  { className: 'ar-row' },
-                  h('div', { className: 'ar-card-title' }, t('timeWindows')),
-                  h('span', { style: S.grow }),
-                  h('button', { className: 'ar-btn tiny', type: 'button', onClick: addWindow }, t('addWindow')),
-                  h('button', { className: 'ar-btn tiny', type: 'button', onClick: presetDeepSeek }, t('presetDeepSeek')),
-                ),
+                Card,
+                {
+                  t,
+                  open: isOpen('windows'),
+                  onToggle: () => toggleCard('windows'),
+                  head: h('span', { className: 'ar-card-title' }, t('timeWindows')),
+                  actions: [
+                    h('button', { key: 'add', className: 'ar-btn tiny', type: 'button', onClick: addWindow }, t('addWindow')),
+                    h('button', { key: 'preset', className: 'ar-btn tiny', type: 'button', onClick: presetDeepSeek }, t('presetDeepSeek')),
+                  ],
+                },
                 h('div', { className: 'ar-hint' }, t('timeWindowHint')),
                 windows.length === 0
                   ? h('div', { className: 'ar-muted' }, t('noWindows'))

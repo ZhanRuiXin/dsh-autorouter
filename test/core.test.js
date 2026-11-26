@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { activeTimeWindow, applyTimeWindow, matchSettingsEntry, normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
+import { activeTimeWindow, applyTimeWindow, matchSettingsEntry, normalizeConfig, resolveProfile, entryKey } from '../src/config.js'
 import { mapEffort, unionEfforts } from '../src/router/effort.js'
 import { classifyFailure } from '../src/router/classify.js'
 import { resolveProfileInfo, toModelInfo } from '../src/router/model-info.js'
@@ -68,13 +68,6 @@ test('resolveProfile resolves ids and aliases', () => {
   assert.equal(resolveProfile(config, 'auto').id, 'auto')
   assert.equal(resolveProfile(config, 'flash').id, 'auto')
   assert.equal(resolveProfile(config, 'nope'), undefined)
-})
-
-test('windowIndexFor aligns fixed windows to the local offset', () => {
-  const day = 24 * 60 * 60 * 1000
-  const before = windowIndexFor(NOW, day, 480)
-  const after = windowIndexFor(NOW + day, day, 480)
-  assert.equal(after - before, 1)
 })
 
 test('activeTimeWindow matches numeric windows against the policy offset', () => {
@@ -218,7 +211,7 @@ test('orderCandidates keeps chain order and treats a time window as a reorder', 
   assert.deepEqual(ordered.candidates.map((entry) => entry.provider), ['b', 'a'])
 })
 
-test('orderCandidates excludes cooling and exhausted routes', () => {
+test('orderCandidates excludes cooling routes', () => {
   const state = new RouterState({ now: () => NOW })
   const profile = selectFixture()
 
@@ -226,21 +219,11 @@ test('orderCandidates excludes cooling and exhausted routes', () => {
   const cooling = orderCandidates({ profile, state, now: NOW })
   assert.deepEqual(cooling.order, ['b/n'])
   assert.equal(cooling.blocked[0].reason, 'cooldown')
-
-  const state2 = new RouterState({ now: () => NOW })
-  const budgeted = selectFixture()
-  budgeted.chain[0].maxRequestsPerWindow = 1
-  state2.noteAttempt('a/m', budgeted.chain[0], NOW)
-  const exhausted = orderCandidates({ profile: budgeted, state: state2, now: NOW })
-  assert.deepEqual(exhausted.order, ['b/n'])
-  assert.equal(exhausted.blocked[0].reason, 'budget')
-  assert.ok(exhausted.blocked[0].resetInMs > 0)
 })
 
-test('sticky sessions win over the ordering mode', () => {
+test('sticky sessions win over the chain order', () => {
   const state = new RouterState({ now: () => NOW })
   const profile = selectFixture()
-  profile.policy.mode = 'quality'
   state.pin('session-1', 'p', 'b/n', NOW)
   const selection = orderCandidates({ profile, state, now: NOW, sessionId: 'session-1' })
   assert.equal(selection.sticky, true)

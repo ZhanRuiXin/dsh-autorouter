@@ -1,6 +1,6 @@
 /**
- * Candidate selection: cooldowns, fixed-window budgets, time windows and sticky
- * sessions. The chain is tried strictly in its configured order; a matching
+ * Candidate selection: cooldowns, time windows and sticky sessions. The chain is
+ * tried strictly in its configured order; a matching
  * time window may rotate which routes come first, but never filters and never
  * sorts by cost or quality.
  */
@@ -13,14 +13,12 @@ import {
   isEntryEligible,
 } from '../config.js'
 
-/** @returns {{usable: boolean, reason?: string, until?: number, resetInMs?: number}} */
-export function usability(entry, state, policy, now, utcOffsetMinutes) {
+/** @returns {{usable: boolean, reason?: string, until?: number}} */
+export function usability(entry, state, policy, now) {
   if (!isEntryEligible(entry)) return { usable: false, reason: 'invalid-entry' }
   const key = entryKey(entry)
   const until = state.coolingUntil(key)
   if (until > now) return { usable: false, reason: 'cooldown', until }
-  const budget = state.budget(key, entry, now, utcOffsetMinutes)
-  if (budget.exhausted) return { usable: false, reason: 'budget', resetInMs: budget.resetInMs }
   return { usable: true }
 }
 
@@ -29,7 +27,7 @@ export function usability(entry, state, policy, now, utcOffsetMinutes) {
  *
  * @returns {{
  *   candidates: object[],
- *   blocked: Array<{entry: object, reason: string, until?: number, resetInMs?: number}>,
+ *   blocked: Array<{entry: object, reason: string, until?: number}>,
  *   window: object | undefined,
  *   sticky: boolean,
  *   order: string[],
@@ -43,11 +41,11 @@ export function orderCandidates({ profile, state, now = Date.now(), sessionId })
   const candidates = []
   const blocked = []
   for (const entry of configured) {
-    const verdict = usability(entry, state, policy, now, policy.utcOffsetMinutes)
+    const verdict = usability(entry, state, policy, now)
     if (verdict.usable) {
       candidates.push(entry)
     } else {
-      blocked.push({ entry, reason: verdict.reason, until: verdict.until, resetInMs: verdict.resetInMs })
+      blocked.push({ entry, reason: verdict.reason, until: verdict.until })
     }
   }
 

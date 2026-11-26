@@ -72,9 +72,6 @@ export const DEFAULT_PROFILE = {
       model: 'deepseek-v4.1-flash-eco',
       label: 'OpenDesign · Flash Eco',
       cooldownMs: 5 * 60 * 1000,
-      maxRequestsPerWindow: 0,
-      maxTokensPerWindow: 0,
-      windowMs: 24 * 60 * 60 * 1000,
       effortMap: {},
     },
     {
@@ -84,9 +81,6 @@ export const DEFAULT_PROFILE = {
       model: 'deepseek/deepseek-v4.1-flash',
       label: 'CommandCode · Flash',
       cooldownMs: 5 * 60 * 1000,
-      maxRequestsPerWindow: 0,
-      maxTokensPerWindow: 0,
-      windowMs: 24 * 60 * 60 * 1000,
       effortMap: {},
     },
     {
@@ -96,9 +90,6 @@ export const DEFAULT_PROFILE = {
       model: 'deepseek-flash',
       label: 'DeepSeek · Flash',
       cooldownMs: 5 * 60 * 1000,
-      maxRequestsPerWindow: 0,
-      maxTokensPerWindow: 0,
-      windowMs: 24 * 60 * 60 * 1000,
       effortMap: {},
     },
   ],
@@ -214,9 +205,6 @@ function normalizeEntry(raw, index, seen) {
     model,
     label: text(raw.label, `${provider} · ${model}`),
     cooldownMs: finiteNumber(raw.cooldownMs, DEFAULT_POLICY.cooldownMs, { min: 0, max: 7 * 24 * 60 * 60 * 1000 }),
-    maxRequestsPerWindow: finiteNumber(raw.maxRequestsPerWindow, 0, { min: 0, max: 10_000_000 }),
-    maxTokensPerWindow: finiteNumber(raw.maxTokensPerWindow, 0, { min: 0, max: 1_000_000_000 }),
-    windowMs: finiteNumber(raw.windowMs, 24 * 60 * 60 * 1000, { min: 60_000, max: 31 * 24 * 60 * 60 * 1000 }),
     effortMap: normalizeEffortMap(raw.effortMap),
   }
 }
@@ -343,22 +331,6 @@ export function enabledEntries(profile) {
   return profile.chain.filter((entry) => entry.enabled)
 }
 
-/**
- * Fixed windows aligned to the local clock: for a day window and UTC+8 the
- * boundary is 00:00 Asia/Shanghai, for an hour window it is the top of the hour.
- */
-export function windowIndexFor(now, windowMs, utcOffsetMinutes = 0) {
-  const shifted = now + utcOffsetMinutes * 60_000
-  return Math.floor(shifted / Math.max(60_000, windowMs))
-}
-
-export function secondsSinceWindowStart(now, windowMs, utcOffsetMinutes = 0) {
-  const index = windowIndexFor(now, windowMs, utcOffsetMinutes)
-  const start = index * Math.max(60_000, windowMs) - utcOffsetMinutes * 60_000
-  return Math.max(0, now - start)
-}
-
-/** Minutes since local midnight for the given offset. */
 export function localMinutes(now, utcOffsetMinutes) {
   const shifted = new Date(now + utcOffsetMinutes * 60_000)
   return shifted.getUTCHours() * 60 + shifted.getUTCMinutes()

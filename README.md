@@ -18,8 +18,10 @@ DSH ──► autorouter/<profile> ──► 回退链
 - **一条虚拟路由，多条上游**：`AutoRouter / auto`（可再加 profile，每个 profile 是一条链）。
 - **只在首个输出块之前切换**：`block-start`、文本、思考、工具调用增量都会提交本次尝试；
   提交后失败原样转发，不再换路由。`usage` 不提交，但会缓存并在切换前补发，花费不丢。
-- **每路由额度与冷却**：固定窗口请求数/ token 数、冷却（指数退避 + 抖动 + `Retry-After`）、
-  半开恢复；额度耗尽或冷却中的路由不会进候选。
+- **冷却与恢复**：失败的路由进入冷却（可配 `Retry-After`、半开恢复），冷却中的路由不会进候选。
+  AutoRouter 不设请求额度：配额由上游的 429 决定，本地账本只会制造看不见的限流。
+- **设置页即 UI**：链编辑、冷却、触发码、时段窗口、思考强度映射、实时状态都在
+  **设置 → AutoRouter** 里完成，卡片可收起（折叠状态记在 `localStorage`），写回仍是带 revision 的 settings 文档。
 - **会话粘性**：同一 `sessionId` 优先落回上次成功的路由，保住上游 prompt cache；
   会话超过 TTL 或该路由失败后才重新选路。
 - **思考强度继承**：虚拟模型公布链上所有路由的 effort 并集；每次尝试按
@@ -126,7 +128,7 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/autorouter/state` | revision、脱敏配置、运行时状态（冷却/额度/统计/粘性会话） |
+| GET | `/api/autorouter/state` | revision、脱敏配置、运行时状态（冷却/统计/粘性会话） |
 | GET/PUT | `/api/autorouter/config` | 读/写配置；PUT 带 `{value, revision}` |
 | GET | `/api/autorouter/catalog` | 已登记的 provider 与模型（排除 `autorouter`） |
 | POST | `/api/autorouter/probe` | `{provider, model}` 元数据可达性检查 |
@@ -139,7 +141,7 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 
 - 助手消息的来源记为 `autorouter/<profile>`，上游的 `replayState` 因此不会被 DSH 保留；
   每轮会重发完整历史（上游 prompt cache 仍有帮助，但 replay 型适配器拿不到增量）。
-- 额度账本是进程内的，重启 DSH 后清零；它约束的是本机路由，不是上游真实额度。
+- 冷却与统计是进程内的，重启 DSH 后清零；它们只反映本机观察到的失败，不是上游的真实配额。
 - catalog 只反映 DSH 已登记的模型，不做联网探测。
 
 ## 开发
@@ -152,4 +154,8 @@ node --test "test/*.test.js"
 `test/plugin.test.js` 用 `test/stubs/hooks.mjs` 把 `@deepseek-ai/dsh-llm` 与
 `@deepseek-ai/schemastery` 映射到本地桩，因此 `apply()`、六个 HTTP 路由的收发
 （含 409 revision 冲突）和 `client.js` 的注册形状也能在纯 Node 下验证。
-真实页面渲染与一次真实补全仍要在 DSH 里确认。
+`test/client-render.test.js` 不需要浏览器：它用一套极小的 React double 驱动 `client.js`
+里真正的渲染代码，按 tab 逐个跑（路由表、策略与时段、JSON、折叠状态、导航图标）。
+`useState` 的调用顺序写进 `SETTINGS_STATE`，插入一个 hook 会直接失败，而不是悄悄画出另一个页面。
+
+一次真实补全仍要在 DSH 里确认。

@@ -2,7 +2,7 @@
 
 > 目标：DSH 的模型选择器里只出现一个 provider `autorouter`（显示名 **AutoRouter**）。所有请求按一条可配置的回退链，在已登记的 provider/model 之间做**额度感知**的选择与轮换；思考强度（reasoning effort）随请求继承到实际执行的路由；全部设置通过 **设置 → AutoRouter** 页面完成，不要求用户编辑 YAML。
 
-状态：已实现（v0.1.3，2026-11-26）。
+状态：已实现（v0.1.4，2026-11-26）。
 
 **实现与初稿的差异以本节为准：**
 
@@ -10,10 +10,15 @@
   链数组的顺序就是尝试顺序，第一条可用路由获胜。
 - 新增 `policy.timeWindows`：按本地时间（默认 UTC+8）命中窗口时，把 `order` 中的路由键
   排到最前，其余保持相对顺序；只重排、不过滤。设置页提供 DeepSeek 峰谷一键预设。
-- 实际 `Entry` 字段：`{ id, provider, model, enabled, cooldownMs, maxRequestsPerWindow,
-  maxTokensPerWindow, windowMs, effortMap }`；`Profile` 字段：
-  `{ id, name, enabled, description, chain, policy }`。
-- 下文 §6/§7 的 `tier/weight/limits` 示意保留为设计演进记录，不再代表实现。
+- 取消请求额度：`maxRequestsPerWindow` / `maxTokensPerWindow` / `windowMs`、状态里的
+  `budget` 字段与 §5.5 的额度账本全部移除。本地账本只能猜上游配额，却会静默拦掉请求；
+  真正的配额信号是上游的 429，冷却与失败计数才是本插件该记的东西。
+- 实际 `Entry` 字段：`{ id, provider, model, enabled, cooldownMs, effortMap }`；
+  `Profile` 字段：`{ id, name, enabled, description, chain, policy }`。
+- 设置页卡片可收起/展开，折叠状态存 `localStorage`（`dsh-autorouter:collapsed`）。
+- 新增 `test/client-render.test.js`：用 React double 在纯 Node 下渲染四个 tab，
+  `useState` 顺序表一旦错位即失败。
+- 下文 §6/§7 的 `tier/weight/limits` 与 §5.5 保留为设计演进记录，不再代表实现。
 
 ---
 
@@ -287,7 +292,11 @@ attempt:
 
 冷却：默认 5 分钟；`cooldownBackoff: true` 时按连续失败次数指数退避（上限 30 分钟）。冷却结束进入半开：允许一次探测，成功清零，失败继续冷却。
 
-### 5.5 额度账本
+### 5.5 额度账本（已废弃，保留为设计演进记录）
+
+> v0.1.4 起不再实现。理由：本地账本只是对上游配额的猜测，猜低了会静默拦掉可用请求，
+> 猜高了又拦不住真正超限的那一刻；上游的 429 与失败计数已经足够。现有配置里的这些键
+> 被 `normalizeConfig` 直接忽略，不需要迁移。
 
 - 窗口：`rpm`/`tpm` 用 60s 滑动窗口（环形桶，10s 粒度即可）；`dailyRequests`/`dailyTokens` 用本地日历日。
 - 计数来源：请求发出即 `+1 req`；`usage` chunk 到达时累加 tokens（`totalTokens ?? input+output`）。失败且没有 usage 的请求仍计 1 次请求。

@@ -105,7 +105,7 @@ export async function* walkRoute(input) {
   const selection = orderCandidates({ profile, state, now: now(), sessionId })
   if (selection.candidates.length === 0) {
     const retryAt = selection.blocked
-      .map((item) => item.until ?? now() + (item.resetInMs ?? 0))
+      .map((item) => item.until)
       .filter((value) => Number.isFinite(value) && value > now())
       .sort((left, right) => left - right)[0]
     const error = makeError(
@@ -136,7 +136,7 @@ export async function* walkRoute(input) {
     const key = entryKey(entry)
 
     if (index > 0) {
-      const verdict = usability(entry, state, policy, now(), policy.utcOffsetMinutes)
+      const verdict = usability(entry, state, policy, now())
       if (!verdict.usable) {
         index += 1
         continue
@@ -176,7 +176,7 @@ export async function* walkRoute(input) {
       attemptOptions.reasoningEffort = mapping.effort
     }
 
-    state.noteAttempt(key, entry, now(), policy.utcOffsetMinutes)
+    state.noteAttempt(key)
     let committed = false
     let pendingUsage = []
     let swallowed
@@ -185,7 +185,6 @@ export async function* walkRoute(input) {
     try {
       for await (const chunk of streamFn(attemptOptions)) {
         if (chunk.type === 'usage') {
-          state.noteUsage(key, chunk.usage, entry, now(), policy.utcOffsetMinutes)
           if (committed) yield chunk
           else pendingUsage.push(chunk)
           continue

@@ -123,13 +123,12 @@ export function installRoutes(deps) {
         }
         const config = getConfig()
         const state = getState()
-        const policy = config.profiles[0]?.policy
         json(res, 200, {
           entryId: ENTRY_ID,
           providerId: PROVIDER_ID,
           revision: descriptor?.revision,
           config: redact(config),
-          status: state.snapshot(config, Date.now(), policy?.utcOffsetMinutes ?? 480),
+          status: state.snapshot(config, Date.now()),
         })
       },
     },

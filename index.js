@@ -141,7 +141,7 @@ export function apply(ctx, config = DEFAULT_CONFIG) {
       getConfig,
       getState,
       getSelection,
-      snapshot: () => state.snapshot(getConfig(), Date.now(), getConfig().profiles[0]?.policy.utcOffsetMinutes ?? 480),
+      snapshot: () => state.snapshot(getConfig(), Date.now()),
       resolveProfile: (model) => resolveProfile(getConfig(), model),
     })
   } catch (error) {

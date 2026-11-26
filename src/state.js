@@ -1,10 +1,10 @@
 /**
  * In-memory routing state: per-session stickiness, cooldowns, failure streaks,
- * fixed-window budgets and counters. Nothing here is persisted: a restart
+ * and counters. Nothing here is persisted: a restart
  * clears every cooldown, which is the behaviour we want after a config change.
  */
 
-import { windowIndexFor, secondsSinceWindowStart, entryKey } from './config.js'
+import { entryKey } from './config.js'
 
 const HOUR = 60 * 60 * 1000
 
@@ -14,7 +14,6 @@ export class RouterState {
     this.maxSessions = maxSessions
     this.sessions = new Map()
     this.cooldowns = new Map()
-    this.budgets = new Map()
     this.failures = new Map()
     this.stats = {
       startedAt: now(),
@@ -109,52 +108,12 @@ export class RouterState {
     return now
   }
 
-  // ---- budgets ----------------------------------------------------------
+  // ---- counters ---------------------------------------------------------
 
-  budget(key, entry, now = this.now(), utcOffsetMinutes = 0) {
-    const windowMs = entry.windowMs
-    const index = windowIndexFor(now, windowMs, utcOffsetMinutes)
-    let record = this.budgets.get(key)
-    if (record === undefined || record.index !== index || record.windowMs !== windowMs) {
-      record = { index, windowMs, requests: 0, tokens: 0 }
-      this.budgets.set(key, record)
-    }
-    const requestLimit = entry.maxRequestsPerWindow
-    const tokenLimit = entry.maxTokensPerWindow
-    const exhausted =
-      (requestLimit > 0 && record.requests >= requestLimit) || (tokenLimit > 0 && record.tokens >= tokenLimit)
-    return {
-      requests: record.requests,
-      tokens: record.tokens,
-      requestLimit,
-      tokenLimit,
-      exhausted,
-      resetInMs:
-        requestLimit > 0 || tokenLimit > 0
-          ? Math.max(0, windowMs - secondsSinceWindowStart(now, windowMs, utcOffsetMinutes))
-          : 0,
-    }
-  }
-
-  noteAttempt(key, entry, now = this.now(), utcOffsetMinutes = 0) {
-    this.budget(key, entry, now, utcOffsetMinutes)
-    const record = this.budgets.get(key)
-    if (record !== undefined) record.requests += 1
+  noteAttempt(key) {
     this.stats.attempts += 1
     this.stats.lastRoute = key
   }
-
-  noteUsage(key, usage, entry, now = this.now(), utcOffsetMinutes = 0) {
-    if (usage === undefined || usage === null) return
-    const tokens =
-      Number(usage.totalTokens ?? 0) ||
-      Number(usage.inputTokens ?? 0) + Number(usage.outputTokens ?? 0) + Number(usage.reasoningTokens ?? 0)
-    if (!Number.isFinite(tokens) || tokens <= 0) return
-    this.budget(key, entry, now, utcOffsetMinutes)
-    const record = this.budgets.get(key)
-    if (record !== undefined) record.tokens += tokens
-  }
-
 
   // ---- bookkeeping ------------------------------------------------------
 
@@ -168,11 +127,6 @@ export class RouterState {
     for (const [key, record] of this.failures) {
       if (now - record.lastAt > HOUR) this.failures.delete(key)
     }
-    if (this.budgets.size > 4096) {
-      for (const [key, record] of this.budgets) {
-        if (now - (record.index * record.windowMs) > 7 * 24 * HOUR) this.budgets.delete(key)
-      }
-    }
   }
 
   setLastError(error) {
@@ -183,12 +137,11 @@ export class RouterState {
    * Serializable view for the settings page. Contains no prompts, no message
    * bodies and no credentials — only route ids and counters.
    */
-  snapshot(config, now = this.now(), utcOffsetMinutes = 0) {
+  snapshot(config, now = this.now()) {
     const routes = []
     for (const profile of config.profiles) {
       for (const entry of profile.chain) {
         const key = entryKey(entry)
-        const budget = this.budget(key, entry, now, utcOffsetMinutes)
         routes.push({
           profileId: profile.id,
           entryId: entry.id,
@@ -199,14 +152,6 @@ export class RouterState {
           enabled: entry.enabled,
           coolingUntil: this.coolingUntil(key) || undefined,
           failures: this.failureStreak(key, now),
-          budget: {
-            requests: budget.requests,
-            tokens: budget.tokens,
-            requestLimit: budget.requestLimit,
-            tokenLimit: budget.tokenLimit,
-            exhausted: budget.exhausted,
-            resetInMs: budget.resetInMs,
-          },
         })
       }
     }
