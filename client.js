@@ -18,8 +18,7 @@ window.__ModuleLoader__.load({
 
     const NS = 'settings.autorouter'
     const EFFORTS = ['off', 'minimal', 'low', 'medium', 'high', 'max']
-    const MODES = ['balanced', 'efficiency', 'quality']
-
+    
     const CSS = `
 .ar-root{display:flex;flex-direction:column;gap:14px;padding:2px 2px 40px;font-size:13px;line-height:1.45;color:inherit;max-width:900px}
 .ar-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
@@ -131,10 +130,13 @@ window.__ModuleLoader__.load({
       down: '下移',
       remove: '删除',
       policyHint: '这些策略作用于当前档位。',
-      mode: '排序模式',
-      modeBalanced: '均衡（按权重轮换）',
-      modeEfficiency: '成本优先',
-      modeQuality: '质量优先',
+      timeWindows: '时间段',
+      addWindow: '添加时段',
+      presetDeepSeek: 'DeepSeek 峰谷',
+      timeWindowHint: '只重排尝试顺序，不过滤；order 里的 route 先试，其余保持链上的相对顺序。',
+      noWindows: '未设置时段，始终按链顺序尝试。',
+      windowLabel: '名称',
+      windowOrderHint: 'route 键，按尝试顺序，逗号分隔，例如 deepseek-account/deepseek-flash',
       sticky: '会话粘性',
       stickyHint: '同一会话尽量复用上一次成功的路由，保护提示缓存。',
       stickinessTtl: '粘性 TTL（分钟）',
@@ -243,10 +245,13 @@ window.__ModuleLoader__.load({
       down: 'Down',
       remove: 'Remove',
       policyHint: 'Applies to the selected profile.',
-      mode: 'Ordering mode',
-      modeBalanced: 'Balanced (weighted rotation)',
-      modeEfficiency: 'Efficiency first',
-      modeQuality: 'Quality first',
+      timeWindows: 'Time windows',
+      addWindow: 'Add window',
+      presetDeepSeek: 'DeepSeek peak / off-peak',
+      timeWindowHint: 'Reorders attempts only, never filters: listed routes go first, the rest keep their relative chain order.',
+      noWindows: 'No windows configured; the chain order always applies.',
+      windowLabel: 'Label',
+      windowOrderHint: 'Route keys in attempt order, comma separated, e.g. deepseek-account/deepseek-flash',
       sticky: 'Session stickiness',
       stickyHint: 'Reuse the last successful route for a session to protect the prompt cache.',
       stickinessTtl: 'Stickiness TTL (min)',
@@ -301,6 +306,17 @@ window.__ModuleLoader__.load({
       emptyChain: 'The chain is empty. Add at least one route before it can take over.',
       entryInvalid: 'provider / model must not be empty',
       unsavedLeave: 'Unsaved changes. Leave anyway?',
+    }
+
+    function minutesToClock(value) {
+      if (typeof value === 'string') {
+        const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+        if (match === null) return ''
+        return `${match[1].padStart(2, '0')}:${match[2]}`
+      }
+      if (typeof value !== 'number' || !Number.isFinite(value)) return ''
+      const total = ((Math.round(value) % 1440) + 1440) % 1440
+      return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
     }
 
     const S = {
@@ -516,30 +532,6 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'ar-entry-main' },
-          h(
-            Field,
-            { label: t('cost') },
-            h('input', {
-              className: 'ar-input num',
-              type: 'number',
-              min: 0,
-              max: 100,
-              value: entry.costHint ?? 50,
-              onChange: (event) => onChange({ costHint: num(event.target.value, 50) }),
-            }),
-          ),
-          h(
-            Field,
-            { label: t('quality') },
-            h('input', {
-              className: 'ar-input num',
-              type: 'number',
-              min: 0,
-              max: 100,
-              value: entry.qualityHint ?? 50,
-              onChange: (event) => onChange({ qualityHint: num(event.target.value, 50) }),
-            }),
-          ),
           h(
             Field,
             { label: t('cooldownMin') },
@@ -846,6 +838,42 @@ window.__ModuleLoader__.load({
           target.policy = { ...target.policy, ...patch }
         })
 
+      const windows = profile?.policy?.timeWindows ?? []
+
+      const editWindow = (index, patch) =>
+        editDraft((next) => {
+          const target = next.profiles[selectedIndex]
+          const list = (target.policy.timeWindows ??= [])
+          list[index] = { ...list[index], ...patch }
+        })
+
+      const addWindow = () =>
+        editDraft((next) => {
+          const target = next.profiles[selectedIndex]
+          const list = (target.policy.timeWindows ??= [])
+          list.push({ id: `window-${list.length + 1}`, label: '', from: '00:00', to: '08:30', order: [] })
+        })
+
+      const removeWindow = (index) =>
+        editDraft((next) => {
+          const target = next.profiles[selectedIndex]
+          target.policy.timeWindows = (target.policy.timeWindows ?? []).filter((_, at) => at !== index)
+        })
+
+      const presetDeepSeek = () =>
+        editDraft((next) => {
+          const target = next.profiles[selectedIndex]
+          const keys = (target.chain ?? [])
+            .filter((entry) => entry.enabled !== false)
+            .map((entry) => `${entry.provider}/${entry.model}`)
+          const official = keys.filter((key) => key.startsWith('deepseek-account/'))
+          const others = keys.filter((key) => !official.includes(key))
+          target.policy.timeWindows = [
+            { id: 'deepseek-offpeak', label: 'DeepSeek 低谷', from: '00:30', to: '08:30', order: [...official, ...others] },
+            { id: 'deepseek-peak', label: 'DeepSeek 标准', from: '08:30', to: '00:30', order: [...others, ...official] },
+          ]
+        })
+
       async function save() {
         if (draft === null || busy) return
         const ids = new Set()
@@ -872,7 +900,7 @@ window.__ModuleLoader__.load({
           setJsonText(JSON.stringify(body.config, null, 2))
           setDirty(false)
           flash(t('saved'))
-          refreshStatus()
+          await load()
         } catch (failure) {
           if (!alive.current) return
           if (failure.status === 409 && failure.body?.config) {
@@ -921,8 +949,6 @@ window.__ModuleLoader__.load({
             enabled: true,
             provider,
             model,
-            costHint: 50,
-            qualityHint: 50,
             cooldownMs: 300000,
             maxRequestsPerWindow: 0,
             maxTokensPerWindow: 0,
@@ -1179,17 +1205,6 @@ window.__ModuleLoader__.load({
                   { className: 'ar-grid' },
                   h(
                     Field,
-                    { label: t('mode') },
-                    h(
-                      'select',
-                      { className: 'ar-select', value: profile?.policy?.mode ?? 'balanced', onChange: (event) => editPolicy({ mode: event.target.value }) },
-                      MODES.map((mode) =>
-                        h('option', { key: mode, value: mode }, mode === 'balanced' ? t('modeBalanced') : mode === 'efficiency' ? t('modeEfficiency') : t('modeQuality')),
-                      ),
-                    ),
-                  ),
-                  h(
-                    Field,
                     { label: t('maxSwitches') },
                     h('input', {
                       className: 'ar-input num',
@@ -1370,6 +1385,63 @@ window.__ModuleLoader__.load({
                     onChange: (event) => editPolicy({ triggerStatuses: splitList(event.target.value).map((item) => Math.round(num(item, 0))).filter((item) => item > 0) }),
                   }),
                 ),
+              ),
+              h(
+                'div',
+                { className: 'ar-card' },
+                h(
+                  'div',
+                  { className: 'ar-row' },
+                  h('div', { className: 'ar-card-title' }, t('timeWindows')),
+                  h('span', { style: S.grow }),
+                  h('button', { className: 'ar-btn tiny', type: 'button', onClick: addWindow }, t('addWindow')),
+                  h('button', { className: 'ar-btn tiny', type: 'button', onClick: presetDeepSeek }, t('presetDeepSeek')),
+                ),
+                h('div', { className: 'ar-hint' }, t('timeWindowHint')),
+                windows.length === 0
+                  ? h('div', { className: 'ar-muted' }, t('noWindows'))
+                  : windows.map((window, index) =>
+                      h(
+                        'div',
+                        { key: index, className: 'ar-window' },
+                        h(
+                          'div',
+                          { className: 'ar-row' },
+                          h('input', {
+                            className: 'ar-input grow',
+                            value: window.label ?? '',
+                            placeholder: t('windowLabel'),
+                            onChange: (event) => editWindow(index, { label: event.target.value }),
+                          }),
+                          h('input', {
+                            className: 'ar-input num',
+                            type: 'time',
+                            value: minutesToClock(window.from),
+                            onChange: (event) => editWindow(index, { from: event.target.value }),
+                          }),
+                          h('span', { className: 'ar-muted' }, '→'),
+                          h('input', {
+                            className: 'ar-input num',
+                            type: 'time',
+                            value: minutesToClock(window.to),
+                            onChange: (event) => editWindow(index, { to: event.target.value }),
+                          }),
+                          h('button', { className: 'ar-btn tiny danger', type: 'button', onClick: () => removeWindow(index) }, '✕'),
+                        ),
+                        h('input', {
+                          className: 'ar-input wide',
+                          value: (window.order ?? []).join(', '),
+                          placeholder: t('windowOrderHint'),
+                          onChange: (event) =>
+                            editWindow(index, {
+                              order: event.target.value
+                                .split(',')
+                                .map((item) => item.trim())
+                                .filter((item) => item !== ''),
+                            }),
+                        }),
+                      ),
+                    ),
               ),
             )
           : null,

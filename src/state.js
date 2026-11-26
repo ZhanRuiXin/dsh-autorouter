@@ -16,7 +16,6 @@ export class RouterState {
     this.cooldowns = new Map()
     this.budgets = new Map()
     this.failures = new Map()
-    this.cursors = new Map()
     this.stats = {
       startedAt: now(),
       attempts: 0,
@@ -156,14 +155,6 @@ export class RouterState {
     if (record !== undefined) record.tokens += tokens
   }
 
-  // ---- rotation ---------------------------------------------------------
-
-  nextCursor(profileId, modulo) {
-    const safeModulo = Math.max(1, modulo)
-    const current = this.cursors.get(profileId) ?? 0
-    this.cursors.set(profileId, (current + 1) % safeModulo)
-    return current % safeModulo
-  }
 
   // ---- bookkeeping ------------------------------------------------------
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { matchSettingsEntry, normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
+import { activeTimeWindow, applyTimeWindow, matchSettingsEntry, normalizeConfig, resolveProfile, entryKey, windowIndexFor } from '../src/config.js'
 import { mapEffort, unionEfforts } from '../src/router/effort.js'
 import { classifyFailure } from '../src/router/classify.js'
 import { resolveProfileInfo, toModelInfo } from '../src/router/model-info.js'
@@ -75,6 +75,14 @@ test('windowIndexFor aligns fixed windows to the local offset', () => {
   const before = windowIndexFor(NOW, day, 480)
   const after = windowIndexFor(NOW + day, day, 480)
   assert.equal(after - before, 1)
+})
+
+test('activeTimeWindow matches numeric windows against the policy offset', () => {
+  const policy = { utcOffsetMinutes: 480, timeWindows: [{ id: 'w', label: 'w', from: 0, to: 1439, order: ['b/n'] }] }
+  const window = activeTimeWindow(policy, NOW)
+  assert.equal(window.id, 'w')
+  const entries = [{ id: 'a', provider: 'a', model: 'm' }, { id: 'b', provider: 'b', model: 'n' }]
+  assert.deepEqual(applyTimeWindow(entries, window).map((entry) => entry.id), ['b', 'a'])
 })
 
 test('unionEfforts merges, sorts and keeps a valid default', () => {
@@ -189,8 +197,8 @@ function selectFixture() {
       {
         id: 'p',
         chain: [
-          { id: 'a', provider: 'a', model: 'm', qualityHint: 90, costHint: 80 },
-          { id: 'b', provider: 'b', model: 'n', qualityHint: 10, costHint: 10 },
+          { id: 'a', provider: 'a', model: 'm' },
+          { id: 'b', provider: 'b', model: 'n' },
         ],
       },
     ],
@@ -198,21 +206,21 @@ function selectFixture() {
   return profile
 }
 
-test('orderCandidates respects quality and efficiency modes', () => {
+test('orderCandidates keeps chain order and treats a time window as a reorder', () => {
   const state = new RouterState({ now: () => NOW })
-  const quality = selectFixture()
-  quality.policy.mode = 'quality'
-  assert.deepEqual(orderCandidates({ profile: quality, state, now: NOW }).order, ['a/m', 'b/n'])
+  const plain = selectFixture()
+  assert.deepEqual(orderCandidates({ profile: plain, state, now: NOW }).order, ['a/m', 'b/n'])
 
-  const efficiency = selectFixture()
-  efficiency.policy.mode = 'efficiency'
-  assert.deepEqual(orderCandidates({ profile: efficiency, state, now: NOW }).order, ['b/n', 'a/m'])
+  const windowed = selectFixture()
+  windowed.policy.timeWindows = [{ id: 'w', label: 'w', from: 0, to: 1439, order: ['b/n'] }]
+  const ordered = orderCandidates({ profile: windowed, state: new RouterState({ now: () => NOW }), now: NOW })
+  assert.deepEqual(ordered.order, ['b/n', 'a/m'])
+  assert.deepEqual(ordered.candidates.map((entry) => entry.provider), ['b', 'a'])
 })
 
 test('orderCandidates excludes cooling and exhausted routes', () => {
   const state = new RouterState({ now: () => NOW })
   const profile = selectFixture()
-  profile.policy.mode = 'quality'
 
   state.suppress('a/m', 60_000, NOW)
   const cooling = orderCandidates({ profile, state, now: NOW })
@@ -221,7 +229,6 @@ test('orderCandidates excludes cooling and exhausted routes', () => {
 
   const state2 = new RouterState({ now: () => NOW })
   const budgeted = selectFixture()
-  budgeted.policy.mode = 'quality'
   budgeted.chain[0].maxRequestsPerWindow = 1
   state2.noteAttempt('a/m', budgeted.chain[0], NOW)
   const exhausted = orderCandidates({ profile: budgeted, state: state2, now: NOW })

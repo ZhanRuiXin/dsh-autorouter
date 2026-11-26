@@ -150,7 +150,7 @@ test('apply registers one provider, one default virtual model and six routes', a
   assert.equal(harness.adapters.length, 1)
   assert.deepEqual(harness.adapters[0].providers, [PROVIDER_ID])
   assert.deepEqual(harness.provided.autorouter.name, PROVIDER_ID)
-  assert.equal(harness.provided.autorouter.version, '0.1.1')
+  assert.equal(harness.provided.autorouter.version, '0.1.3')
 
   const adapter = harness.adapters[0].adapter
   assert.deepEqual(adapter.providerInfo(PROVIDER_ID), { id: PROVIDER_ID, name: 'AutoRouter' })

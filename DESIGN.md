@@ -2,7 +2,18 @@
 
 > 目标：DSH 的模型选择器里只出现一个 provider `autorouter`（显示名 **AutoRouter**）。所有请求按一条可配置的回退链，在已登记的 provider/model 之间做**额度感知**的选择与轮换；思考强度（reasoning effort）随请求继承到实际执行的路由；全部设置通过 **设置 → AutoRouter** 页面完成，不要求用户编辑 YAML。
 
-状态：设计稿。未写代码。
+状态：已实现（v0.1.3，2026-11-26）。
+
+**实现与初稿的差异以本节为准：**
+
+- 取消 `tier` / `weight` / `costHint` / `qualityHint` 与 balanced/efficiency/quality 轮换；
+  链数组的顺序就是尝试顺序，第一条可用路由获胜。
+- 新增 `policy.timeWindows`：按本地时间（默认 UTC+8）命中窗口时，把 `order` 中的路由键
+  排到最前，其余保持相对顺序；只重排、不过滤。设置页提供 DeepSeek 峰谷一键预设。
+- 实际 `Entry` 字段：`{ id, provider, model, enabled, cooldownMs, maxRequestsPerWindow,
+  maxTokensPerWindow, windowMs, effortMap }`；`Profile` 字段：
+  `{ id, name, enabled, description, chain, policy }`。
+- 下文 §6/§7 的 `tier/weight/limits` 示意保留为设计演进记录，不再代表实现。
 
 ---
 

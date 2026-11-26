@@ -75,8 +75,8 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
 
 - **Routes**：增删 profile、增删/排序/启停路由；从已登记 provider 与模型里选；
   `Probe` 只做元数据可达性检查（列模型 + 解析模型信息），不发真实请求。
-- **Policy**：选路模式（balanced/efficiency/quality）、`maxSwitches`、冷却与退避、
-  粘性 TTL、失败窗口、effort/context 策略、触发错误码与状态码。
+- **Policy**：`maxSwitches`、冷却与退避、粘性 TTL、失败窗口、effort/context 策略、
+  触发错误码与状态码，以及**时间段**（峰值/低谷重排，见下）。
 - **JSON**：直接编辑完整配置再回填表单。
 
 页面通过同源 `/api/autorouter/*` 与宿主通信，配置写入仍走
@@ -94,19 +94,33 @@ bundle 自带的 patch 插入的行 id 是 `include:llm-autorouter`，而 `descr
   "debug": false,
   "profiles": [{
     "id": "auto", "name": "Auto", "enabled": true,
-    "policy": { "mode": "balanced", "maxSwitches": 8, "cooldownMs": 300000,
-                "sticky": true, "effortPolicy": "clamp", "contextPolicy": "min" },
+    "policy": { "maxSwitches": 8, "cooldownMs": 300000, "sticky": true,
+                "effortPolicy": "clamp", "contextPolicy": "min",
+                "timeWindows": [
+                  { "id": "offpeak", "label": "低谷", "from": "00:30", "to": "08:30",
+                    "order": ["deepseek-account/deepseek-flash"] }
+                ] },
     "chain": [
       { "id": "od", "provider": "opendesign", "model": "deepseek-v4.1-flash-eco",
-        "costHint": 80, "qualityHint": 40, "cooldownMs": 300000 },
+        "cooldownMs": 300000 },
       { "id": "cc", "provider": "commandcode", "model": "deepseek/deepseek-v4.1-flash",
-        "costHint": 50, "qualityHint": 60 },
+        "cooldownMs": 300000 },
       { "id": "ds", "provider": "deepseek-account", "model": "deepseek-flash",
-        "costHint": 20, "qualityHint": 50 }
+        "cooldownMs": 300000 }
     ]
   }]
 }
 ```
+
+## 选路顺序
+
+链数组就是尝试顺序：从头到尾，第一条可用路由获胜；没有加权轮换，也没有质量/成本打分。
+一次尝试只有在**输出前**失败、且错误码或状态码命中触发条件时才会切到下一条；
+一旦收到第一个内容块，失败会原样上报，不再切换。
+
+**时间段**只做重排、不做过滤：命中当前本地时间（默认 UTC+8）的窗口会把 `order` 里列出的
+路由键排到最前面，其余路由保持链上的相对顺序。设置页提供「DeepSeek 峰谷」一键预设：
+00:30–08:30 让 `deepseek-account/*` 优先，08:30–00:30 让其余路由优先。
 
 ## 宿主接口
 

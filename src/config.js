@@ -31,7 +31,6 @@ export const DEFAULT_TRIGGER_STATUSES = [401, 402, 403, 408, 409, 425, 429, 500,
 export const EFFORT_ORDER = ['off', 'minimal', 'low', 'medium', 'high', 'max']
 
 export const DEFAULT_POLICY = {
-  mode: 'balanced',
   sticky: true,
   stickinessTtlMs: 30 * 60 * 1000,
   maxSwitches: 8,
@@ -64,7 +63,7 @@ export const DEFAULT_PROFILE = {
   name: 'Auto',
   aliases: [],
   enabled: true,
-  description: 'One route: OpenDesign -> CommandCode -> DeepSeek, quota-aware.',
+  description: 'One route: OpenDesign -> CommandCode -> DeepSeek, strictly in chain order.',
   chain: [
     {
       id: 'opendesign-flash-eco',
@@ -72,9 +71,6 @@ export const DEFAULT_PROFILE = {
       provider: 'opendesign',
       model: 'deepseek-v4.1-flash-eco',
       label: 'OpenDesign · Flash Eco',
-      weight: 1,
-      costHint: 80,
-      qualityHint: 40,
       cooldownMs: 5 * 60 * 1000,
       maxRequestsPerWindow: 0,
       maxTokensPerWindow: 0,
@@ -87,9 +83,6 @@ export const DEFAULT_PROFILE = {
       provider: 'commandcode',
       model: 'deepseek/deepseek-v4.1-flash',
       label: 'CommandCode · Flash',
-      weight: 1,
-      costHint: 50,
-      qualityHint: 60,
       cooldownMs: 5 * 60 * 1000,
       maxRequestsPerWindow: 0,
       maxTokensPerWindow: 0,
@@ -102,9 +95,6 @@ export const DEFAULT_PROFILE = {
       provider: 'deepseek-account',
       model: 'deepseek-flash',
       label: 'DeepSeek · Flash',
-      weight: 1,
-      costHint: 20,
-      qualityHint: 50,
       cooldownMs: 5 * 60 * 1000,
       maxRequestsPerWindow: 0,
       maxTokensPerWindow: 0,
@@ -161,8 +151,12 @@ function statusList(value, fallback) {
   return list.length > 0 ? [...new Set(list)] : [...fallback]
 }
 
-/** `HH:MM` -> minutes since local midnight, or `undefined` when malformed. */
+/** `HH:MM` or already-normalized minutes -> minutes since local midnight. */
 export function parseClock(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const minutes = Math.round(value)
+    return minutes >= 0 && minutes < 1440 ? minutes : undefined
+  }
   if (typeof value !== 'string') return undefined
   const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
   if (match === null) return undefined
@@ -219,9 +213,6 @@ function normalizeEntry(raw, index, seen) {
     provider,
     model,
     label: text(raw.label, `${provider} · ${model}`),
-    weight: finiteNumber(raw.weight, 1, { min: 1, max: 1000 }),
-    costHint: finiteNumber(raw.costHint, 50, { min: 0, max: 100 }),
-    qualityHint: finiteNumber(raw.qualityHint, 50, { min: 0, max: 100 }),
     cooldownMs: finiteNumber(raw.cooldownMs, DEFAULT_POLICY.cooldownMs, { min: 0, max: 7 * 24 * 60 * 60 * 1000 }),
     maxRequestsPerWindow: finiteNumber(raw.maxRequestsPerWindow, 0, { min: 0, max: 10_000_000 }),
     maxTokensPerWindow: finiteNumber(raw.maxTokensPerWindow, 0, { min: 0, max: 1_000_000_000 }),
@@ -234,11 +225,9 @@ function normalizePolicy(raw) {
   const source = isObject(raw) ? raw : {}
   const base = DEFAULT_POLICY
   const recovery = source.recovery === 'half-open' ? 'half-open' : 'timer'
-  const mode = source.mode === 'efficiency' || source.mode === 'quality' ? source.mode : 'balanced'
   const effortPolicy = source.effortPolicy === 'drop' || source.effortPolicy === 'fail' ? source.effortPolicy : 'clamp'
   const contextPolicy = source.contextPolicy === 'fixed' ? 'fixed' : 'min'
   return {
-    mode,
     sticky: boolean(source.sticky, base.sticky),
     stickinessTtlMs: finiteNumber(source.stickinessTtlMs, base.stickinessTtlMs, { min: 60_000, max: 24 * 60 * 60 * 1000 }),
     maxSwitches: Math.floor(finiteNumber(source.maxSwitches, base.maxSwitches, { min: 0, max: 32 })),
@@ -375,8 +364,8 @@ export function localMinutes(now, utcOffsetMinutes) {
   return shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
 }
 
-export function timeWindowMatches(window, now) {
-  const minutes = localMinutes(now, window.utcOffsetMinutes)
+export function timeWindowMatches(window, now, utcOffsetMinutes = window.utcOffsetMinutes ?? 0) {
+  const minutes = localMinutes(now, utcOffsetMinutes)
   if (window.from === window.to) return true
   if (window.from < window.to) return minutes >= window.from && minutes < window.to
   return minutes >= window.from || minutes < window.to
@@ -384,7 +373,7 @@ export function timeWindowMatches(window, now) {
 
 /** The first matching time window in config order, or `undefined`. */
 export function activeTimeWindow(policy, now) {
-  return (policy.timeWindows ?? []).find((window) => timeWindowMatches(window, now))
+  return (policy.timeWindows ?? []).find((window) => timeWindowMatches(window, now, policy.utcOffsetMinutes))
 }
 
 /**
@@ -394,9 +383,10 @@ export function activeTimeWindow(policy, now) {
 export function applyTimeWindow(entries, window) {
   if (window === undefined) return entries
   const rank = new Map(window.order.map((id, index) => [id, index]))
+  const rankOf = (entry) => rank.get(entry.id) ?? rank.get(`${entry.provider}/${entry.model}`)
   return [...entries].sort((left, right) => {
-    const leftRank = rank.get(left.id)
-    const rightRank = rank.get(right.id)
+    const leftRank = rankOf(left)
+    const rightRank = rankOf(right)
     if (leftRank !== undefined && rightRank !== undefined) return leftRank - rightRank
     if (leftRank !== undefined) return -1
     if (rightRank !== undefined) return 1

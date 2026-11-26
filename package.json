@@ -1,6 +1,6 @@
 {
   "name": "dsh-autorouter",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "AutoRouter — one DSH provider, a quota-aware fallback chain, reasoning effort inherited from the caller.",
@@ -48,4 +48,3 @@
     "node": ">=22"
   }
 }
-
