@@ -38,6 +38,13 @@ DSH ──► autorouter/<profile> ──► 回退链
 "dsh": { "profile": { "bundles": [ /* … 其他 bundle … */, "dsh-autorouter" ] } }
 ```
 
+DSH 只在插件声明了 `peerDependencies` 时才会把 `@deepseek-ai/*` 解析到安装目录。
+本包因此声明了 `@deepseek-ai/schemastery` 与 `@deepseek-ai/dsh-llm`；漏掉它们时
+进程会报 `Cannot find package '@deepseek-ai/schemastery'`，插件行停在 `inactive`
+（`cordis_inspect` 的 Config 状态不会是 `schema`）。
+
+装好后（或改了文件后）对插件行触发一次重组即可，不必重启：
+`plugin_manager set_plugin { target: "include:llm-autorouter", enabled: true }`。
 重启 DSH 后：
 
 1. 设置 → **AutoRouter** 出现设置页；

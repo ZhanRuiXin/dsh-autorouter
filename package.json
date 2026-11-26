@@ -1,6 +1,6 @@
 {
   "name": "dsh-autorouter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "AutoRouter — one DSH provider, a quota-aware fallback chain, reasoning effort inherited from the caller.",
@@ -39,6 +39,10 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/schemastery": "*"
   },
   "engines": {
     "node": ">=22"
